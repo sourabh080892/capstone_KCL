@@ -1,0 +1,113 @@
+---
+title: "Capstone - Fall, 2019"
+author: ""
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document:
+    df_print: paged
+    toc: true
+    toc_float: true
+---
+
+Commented header  
+=========================================
+
+```{r echo = TRUE}
+# Course: BUAN 5510
+# Title: Capstone- Business Analytics
+# Purpose: King's County Court House
+# Date: 2019-10-10
+# Author: Sourabh Gupta, Keith Castelino
+```
+
+Clear environment of variables and packages  
+=========================================
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+# Clear environment of variables and functions
+rm(list = ls(all = TRUE)) 
+# Clear environmet of packages
+if(is.null(sessionInfo()$otherPkgs) == FALSE)lapply(paste("package:", names(sessionInfo()$otherPkgs), sep=""), detach, character.only = TRUE, unload = TRUE)
+```
+
+Load packages that include different functions  
+=========================================
+
+```{r message = FALSE, warning=FALSE}
+# adding library
+# install.packages("stringi")
+library(tidyverse)
+# library(GGally)
+# library(gridExtra)
+library("readxl")
+# library(janitor)
+# library(stringr)
+# library(aod)
+# library(stringi)
+# library(tidyverse)
+# library(GGally)
+# library(gridExtra)
+# library("readxl")
+# library(janitor)
+# library(stringr)
+# library(aod)
+# library(ggplot2)
+# library(dplyr)
+```
+
+Load data and begin new EDA  
+=========================================
+
+```{r message = FALSE, warning=FALSE}
+#loading data
+# xlsx files -- Data for SU Part 1 - Filed Cases and Hearings
+D11_filed_cases <- read_excel("../Data/Data for SU Part 1 - Filed Cases and Hearings.xlsx", sheet = "FiledCases SU")
+D12_case_event <- read_excel("../Data/Data for SU Part 1 - Filed Cases and Hearings.xlsx", sheet = "CaseEvents SU")
+D13_case_event_key <- read_excel("../Data/Data for SU Part 1 - Filed Cases and Hearings.xlsx", sheet = "CaseEvent Key")
+D14_case_type <- read_excel("../Data/Data for SU Part 1 - Filed Cases and Hearings.xlsx", sheet = "CaseType Key")
+#
+# xlsx files -- Data for SU Part 2
+D21_charge <- read_excel("../Data/Data for SU Part 2.xlsx", sheet = "SU Charges")
+D22_charge_def <- read_excel("../Data/Data for SU Part 2.xlsx", sheet = "Charge Definitions")
+D23_dispo_key <- read_excel("../Data/Data for SU Part 2.xlsx", sheet = "Disposition Key")
+D24_crime_hist <- read_excel("../Data/Data for SU Part 2.xlsx", sheet = "SU CrimHist")
+#
+# xlsx files -- Data for SU Part 3 - custody history
+D31_custody_hist <- read_excel("../Data/Data for SU Part 3 - custody history.xlsx", sheet = "CustodyHistory SU")
+```
+
+
+
+Merge Data
+=============================================
+```{r}
+
+```
+
+
+Basic EDA
+============================================
+
+# ----
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+# ----
+
+```{r}
+
+```
+
+# ----
+
+```{r}
+
+```
+
