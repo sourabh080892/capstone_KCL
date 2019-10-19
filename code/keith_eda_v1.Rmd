@@ -1,0 +1,130 @@
+---
+title: "BUAN 5310 - Group Project - EDA"
+author: "Walt Ames, Peter Broadstone, Keith Castelino, Eirik Fosnaes"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    theme: united
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(
+	fig.width = 8.5,
+	# include = FALSE,
+	# echo = FALSE,
+	message = FALSE,
+	warning = FALSE
+)
+
+options(tibble.print_max = 40, tibble.print_min = 25)
+
+```
+
+# Prepare your environment
+
+Following needs to be done in order to prepare your environment:
+
++ Clean environment of all variables, functions and packages
++ Load packages required for analysis (only those that are required)
++ Set colour preferences for graphs
++ Load custom functions
+
+Read in the raw data, as is required.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, include=}
+
+# Clear environment of variables and functions
+rm(list = ls(all = TRUE)) 
+
+# Clear environment of packages
+if(is.null(sessionInfo()$otherPkgs) == FALSE) {
+  lapply(paste("package:", names(sessionInfo()$otherPkgs), sep=""), 
+         detach, character.only = TRUE, unload = TRUE)
+}
+
+# LOADING PACKAGES
+library(tidyverse)
+library(readxl)
+library(dlookr)
+library(janitor)
+library(lubridate)
+library(stringr)
+
+# LOADING DATA
+
+# Data for SU Part 1 - Filed Cases and Hearings
+D11_filed_cases <- read_excel(here::here("data", "raw", "Data for SU Part 1 - Filed Cases and Hearings.xlsx"), sheet = "FiledCases SU") %>% clean_names()
+D12_case_event <- read_excel(here::here("data", "raw", "Data for SU Part 1 - Filed Cases and Hearings.xlsx"), sheet = "CaseEvents SU") %>% clean_names()
+D13_case_event_key <- read_excel(here::here("data", "raw", "Data for SU Part 1 - Filed Cases and Hearings.xlsx"), sheet = "CaseEvent Key") %>% clean_names()
+D14_case_type <- read_excel(here::here("data", "raw", "Data for SU Part 1 - Filed Cases and Hearings.xlsx"), sheet = "CaseType Key") %>% clean_names()
+
+# Data for SU Part 2
+D21_charge <- read_excel(here::here("data", "raw", "Data for SU Part 2.xlsx"), sheet = "SU Charges") %>% clean_names()
+D22_charge_def <- read_excel(here::here("data", "raw", "Data for SU Part 2.xlsx"), sheet = "Charge Definitions") %>% clean_names()
+D23_dispo_key <- read_excel(here::here("data", "raw", "Data for SU Part 2.xlsx"), sheet = "Disposition Key") %>% clean_names()
+D24_crime_hist <- read_excel(here::here("data", "raw", "Data for SU Part 2.xlsx"), sheet = "SU CrimHist") %>% clean_names()
+
+# Data for SU Part 3 - custody history
+D31_custody_hist <- read_excel(here::here("data", "raw", "Data for SU Part 3 - custody history.xlsx"), sheet = "CustodyHistory SU") %>% clean_names()
+
+```
+
+# Cleaning the Data
+
+## Data Types
+
+We use str() and diagnose() (from dlookr) to confirm if the data type of each column is per expectation and convert formats wherever necessary.
+
+```{r}
+D11_filed_cases <- D11_filed_cases %>% 
+  mutate(
+    dob_anon = ymd(dob_anon),
+    referral_date = mdy(referral_date), 
+    event_enter_date = mdy(event_enter_date),
+    gender = factor(gender)
+  ) %>% 
+  select(-c(referral_date, event_code, police_agency)) %>% 
+  replace_na(list(gender = "Unknown"))
+D12_case_event <- D12_case_event %>% 
+  mutate(event_docket_date = ymd(event_docket_date)) %>% 
+  select(-c(defendant_id, case_types, event_enter_date))
+D21_charge <- D21_charge %>% 
+  mutate_at(c("referral_date", "offense_start_date", "offense_end_date", "filing_date"), mdy) %>% 
+  mutate(
+    offense_end_date = if_else(is.na(offense_end_date), offense_start_date, offense_end_date),
+    charge_code = str_to_upper(str_trim(
+      str_split(string = current_charge_s, pattern = '-', n = 2, simplify = TRUE)[,1]
+    )),
+    charge_enhanced = if_else(is.na(enhancements), "No", "Yes"),
+    filing_gap = interval(offense_end_date, filing_date) %/% months(1)
+  ) %>% 
+  select(-c(referral_date, referral_charge_s, original_charge_s, warning))
+D22_charge_def <- D22_charge_def %>% 
+  mutate(
+    code = if_else(str_detect(code, "[A-Z]"), code, str_pad(code, 5, "left", "0")),
+    disposition_class = case_when(
+      class %in% c('A', 'B', 'C') ~ "Felony",
+      class %in% c('U', 'GM') ~ "Misdemeanour",
+      TRUE ~ "other"
+    ),
+    is_violent = if_else(violent == 1, "Yes", "No/Maybe")
+  )
+D23_dispo_key <- D23_dispo_key %>% 
+  mutate(
+    type = factor(type),
+    disposition_code = fct_recode(type, Other = "Dismissal", Other = "Decline or Other/Error")
+  )
+D24_crime_hist <- D24_crime_hist %>% 
+  mutate(
+    jurisdiction_state = str_extract(jursidiction, "\\b[A-Z]{2}"),
+    age_group = if_else(startsWith(conviction_level, 'J'), "juvenile", "adult"),
+    felony_misd = if_else(endsWith(conviction_level, 'M'), "misdemeanour", "felony"),
+  )
+
+```
+

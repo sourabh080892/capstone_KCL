@@ -40,7 +40,7 @@ library(tidyverse)
 # library(GGally)
 # library(gridExtra)
 library("readxl")
-# library(janitor)
+library(janitor)
 # library(stringr)
 # library(aod)
 # library(stringi)
@@ -55,29 +55,40 @@ Load data and begin new EDA
 #loading data
 #
 # xlsx files -- Data for SU Part 1 - Filed Cases and Hearings
-D11_filed_cases <- read_excel("../Data/Data for SU Part 1 - Filed Cases and Hearings.xlsx", sheet = "FiledCases SU")
-D12_case_event <- read_excel("../Data/Data for SU Part 1 - Filed Cases and Hearings.xlsx", sheet = "CaseEvents SU")
-D13_case_event_key <- read_excel("../Data/Data for SU Part 1 - Filed Cases and Hearings.xlsx", sheet = "CaseEvent Key")
-D14_case_type <- read_excel("../Data/Data for SU Part 1 - Filed Cases and Hearings.xlsx", sheet = "CaseType Key")
+D11_filed_cases <- read_excel("../Data/Data for SU Part 1 - Filed Cases and Hearings.xlsx", sheet = "FiledCases SU") %>% clean_names()
+D12_case_event <- read_excel("../Data/Data for SU Part 1 - Filed Cases and Hearings.xlsx", sheet = "CaseEvents SU") %>% clean_names()
+D13_case_event_key <- read_excel("../Data/Data for SU Part 1 - Filed Cases and Hearings.xlsx", sheet = "CaseEvent Key") %>% clean_names()
+D14_case_type <- read_excel("../Data/Data for SU Part 1 - Filed Cases and Hearings.xlsx", sheet = "CaseType Key") %>% clean_names()
 #
 # xlsx files -- Data for SU Part 2
-D21_charge <- read_excel("../Data/Data for SU Part 2.xlsx", sheet = "SU Charges")
-D22_charge_def <- read_excel("../Data/Data for SU Part 2.xlsx", sheet = "Charge Definitions")
-D23_dispo_key <- read_excel("../Data/Data for SU Part 2.xlsx", sheet = "Disposition Key")
-D24_crime_hist <- read_excel("../Data/Data for SU Part 2.xlsx", sheet = "SU CrimHist")
+D21_charge <- read_excel("../Data/Data for SU Part 2.xlsx", sheet = "SU Charges") %>% clean_names()
+D22_charge_def <- read_excel("../Data/Data for SU Part 2.xlsx", sheet = "Charge Definitions") %>% clean_names()
+D23_dispo_key <- read_excel("../Data/Data for SU Part 2.xlsx", sheet = "Disposition Key") %>% clean_names()
+D24_crime_hist <- read_excel("../Data/Data for SU Part 2.xlsx", sheet = "SU CrimHist") %>% clean_names()
 #
 # xlsx files -- Data for SU Part 3 - custody history
-D31_custody_hist <- read_excel("../Data/Data for SU Part 3 - custody history.xlsx", sheet = "CustodyHistory SU")
+D31_custody_hist <- read_excel("../Data/Data for SU Part 3 - custody history.xlsx", sheet = "CustodyHistory SU") %>% clean_names()
 #
 ```
 
 
+Delete columns not required
+=============================================
+```{r}
+###
+D11_filed_cases <- D11_filed_cases %>% select(c(file_number, defendant_id, dob_anon, gender))
 
-Merge Data
+###
+D21_charge <- D21_charge %>% select(-c(referral_date, offense_start_date, offense_end_date, 
+                                       referral_charge_s, original_charge_s, warning))
+
+```
+
+Mutate D11 Data
 =============================================
 ```{r}
 # Calculate the age of the defendant
-D11_filed_cases <- D11_filed_cases %>%  mutate(age_in_days = Sys.Date() - as.Date(D11_filed_cases$`DOB Anon`))
+D11_filed_cases <- D11_filed_cases %>%  mutate(age_in_days = Sys.Date() - as.Date(D11_filed_cases$dob_anon))
 
 # Convert age into categories as mentioned in Data dictionary
 D11_filed_cases <-D11_filed_cases %>%  
@@ -87,23 +98,75 @@ D11_filed_cases <-D11_filed_cases %>%
                                                 ifelse(age >= 30 & age < 40, '30-39',
                                                       ifelse(age >=40  & age < 50, '40-49',
                                                             ifelse(age >= 50 & age < 60, '50-59',
-                                                                  ifelse(age >= 60, '>60',0)))))))
+                                                                  ifelse(age >= 60, '>60',0))))))) %>%
+                  select(c(file_number, defendant_id, dob_anon, gender, age_cate))
 
-# Merge D11_filed_cases_SU and D12_case_events_SU tables on "File Number" and "Defendant ID"
-filed_case_events =  merge(x = D11_filed_cases, y = D12_case_event, by = c("File Number", "Defendant ID"), all = TRUE) %>% select(-c("Venue.x", "age_in_days", "age"))
+
+```
+
+How many defendants in multiple age categories
+
+```{r}
+ggplot(data=D11_filed_cases, aes(x=age_cate)) +
+geom_bar() +
+geom_text(stat='count', aes(label=..count..), vjust=-1)
+```
+
++ There are very less number of defendants having age less than 19 anf greater than 60
+
+
+Mutate D13 Data
+=============================================
+```{r}
+# Convert Case Events into Categories, A, B, C, D
+# where A - Arraingment, B - Case setting, C - Hearing, D - Disposition
+
+a_arraingment <- c("HRARRSC", "HRARDR")
+b_case_setting <- c("HRCSGP","HRCSNWK","HRCSNWS","HRCSWK","HRCSWS")
+c_hearing <- c("HRCOMP", "HRCOMPAR", "HRCOMPBS", "HRCOMPCS", "HRCOMPKA", "HRCOMPKC", "HRCOMPKT", "HRCOMPTR")
+d_dispositon <- c()
+dfa <- c("DEFFTA")
+
+# mutate
+D12_case_event <-D12_case_event %>%  
+                  mutate(case_event_stage = ifelse(event_code %in% a_arraingment , 'A - Arraingment', 
+                                                  ifelse(event_code %in% b_case_setting , 'B - Case setting',
+                                                        ifelse(event_code %in% c_hearing , 'C - Hearing',
+                                                              ifelse(event_code %in% d_dispositon , 'D - Disposition', 
+                                                                     ifelse(event_code %in% dfa , 'DFA', event_code))))))
+
+
+
+```
+
+How many defendants in multiple case categories
+
+```{r}
+ggplot(data=D12_case_event, aes(x=case_event_stage)) +
+geom_bar() +
+geom_text(stat='count', aes(label=..count..), vjust=-1)
+```
+
+
+```{r}
+###
+# Split "Current Charge(s)" at '-' to get the charge code and merge it with D22 Charge definition table
+D21_charge <- D21_charge %>%
+  separate(current_charge_s, c("charge_code"), sep = "-", extra = 'drop')
+
+# # Merge D11_filed_cases_SU and D12_case_events_SU tables on "File Number" and "Defendant ID"
+# filed_case_events =  merge(x = D11_filed_cases, y = D12_case_event, by = c("file_number", "defendant_id"), all = TRUE) %>% select(-c("venue.x", "age_in_days", "age"))
 
 # Merge Filed_cases_SU and SU_charges tables on Filenumber: we will be having charges and disposition date per file
-filed_case_charges =  merge(x = D11_filed_cases, y = D21_charge, by = "File Number", all = TRUE) %>%
-                      select(-c("DOB Anon", "Referral Date.x", "Referral Date.y", "Referral Charge(s)",
-                                "Original Charge(s)", "age_in_days", "age"))
+filed_case_charges =  merge(x = D11_filed_cases, y = D21_charge, by = "file_number", all = TRUE) %>%
+                      select(-c("dob_anon", "referral_date.x", "referral_date.y", "referral_charge_s",
+                                "original_charge_s", "age_in_days", "age"))
 
 #----------
 #----------
 #####------Code not working, need to check--------#####
 #----------
-# Split "Current Charge(s) at '-' to get the charge code and merge it with D22 Charge definition table
-# filed_case_charges <- filed_case_charges %>%
-#   separate(`Current Charge(s)`, c("charge_code"), sep = "-", extra = 'drop')
+
 # filed_case_charges <- transform(filed_case_charges, charge_code = as.numeric(charge_code))
 # 
 # # Left Join filed_case_charges table with D22_charge_def to get class, violent and seriousness of charge
