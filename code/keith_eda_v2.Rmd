@@ -1,0 +1,302 @@
+---
+title: "BUAN 5510 - Capstone Project - EDA"
+author: "Keith Castelino and Sourabh Gupta"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    theme: united
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(
+	fig.width = 8.5,
+	# include = FALSE,
+	# echo = FALSE,
+	message = FALSE,
+	warning = FALSE
+)
+
+options(tibble.print_max = 40, tibble.print_min = 25)
+
+```
+
+# Prepare your environment
+
+Following needs to be done in order to prepare your environment:
+
++ Clean environment of all variables, functions and packages
++ Load packages required for analysis (only those that are required)
++ Set colour preferences for graphs
++ Load custom functions
+
+Read in the raw data, as is required.
+
+```{r echo = FALSE, message = FALSE, warning = FALSE, include = FALSE}
+
+# Clear environment of variables and functions
+rm(list = ls(all = TRUE)) 
+
+# Clear environment of packages
+if(is.null(sessionInfo()$otherPkgs) == FALSE) {
+  lapply(paste("package:", names(sessionInfo()$otherPkgs), sep=""), 
+         detach, character.only = TRUE, unload = TRUE)
+}
+
+# load required libraries (Use install.packages(tidyverse), for example, if needed)
+library(tidyverse)
+library(here)
+library(readxl)
+library(dlookr)
+library(janitor)
+library(stringr)
+library(lubridate)
+library(naniar)
+library(zoo)
+
+# LOAD IN DATA
+
+# Data for SU Part 1 - Filed Cases and Hearings
+D11_filed_cases <- read_excel(here::here("data", "raw", "Data for SU Part 1 - Filed Cases and Hearings.xlsx"), sheet = "FiledCases SU") %>% clean_names()
+D12_case_event <- read_excel(here::here("data", "raw", "Data for SU Part 1 - Filed Cases and Hearings.xlsx"), sheet = "CaseEvents SU") %>% clean_names()
+D13_case_event_key <- read_excel(here::here("data", "raw", "Data for SU Part 1 - Filed Cases and Hearings.xlsx"), sheet = "CaseEvent Key") %>% clean_names()
+D14_case_type <- read_excel(here::here("data", "raw", "Data for SU Part 1 - Filed Cases and Hearings.xlsx"), sheet = "CaseType Key") %>% clean_names()
+
+# Data for SU Part 2
+D21_charge <- read_excel(here::here("data", "raw", "Data for SU Part 2.xlsx"), sheet = "SU Charges") %>% clean_names()
+D22_charge_def <- read_excel(here::here("data", "raw", "Data for SU Part 2.xlsx"), sheet = "Charge Definitions") %>% clean_names()
+D23_dispo_key <- read_excel(here::here("data", "raw", "Data for SU Part 2.xlsx"), sheet = "Disposition Key") %>% clean_names()
+D24_crime_hist <- read_excel(here::here("data", "raw", "Data for SU Part 2.xlsx"), sheet = "SU CrimHist") %>% clean_names()
+
+# Data for SU Part 3 - custody history
+D31_custody_hist <- read_excel(here::here("data", "raw", "Data for SU Part 3 - custody history.xlsx"), sheet = "CustodyHistory SU") %>% clean_names()
+
+```
+
+# Cleaning the Data
+
+To ensure that data is fit for analysis, we need to do the following:
+
++ Data structure: Ensure that the columns within each table are defined correctly
+    + Confirm the data type is per expectation, and matches with definition in data dictionary
++ Derived variables: Define new columns based on data provided that are important factors for analysis
+
+Notes for each of the datasets are below:
+
+## D11_filed_cases
+
++ One record = one case
+    + If there is more than one person involved in the same crime, they have different case numbers
+    + A single defendant may be involved in more than one case
++ Date of Birth: Defendants need to be placed into age groups using **which date**
+
+```{r}
+D11_filed_cases <- D11_filed_cases %>% 
+  mutate(
+    dob_anon = ymd(dob_anon),
+    event_enter_date = mdy(event_enter_date),
+    age = interval(dob_anon, event_enter_date) %/% years(1),
+    age_group = cut(
+      age, breaks = c(0, 20, 30, 40, 50, 60, 80),
+      labels = c("<=20", "20-30", "30-40", "40-50", "50-60", ">=60")
+    ),
+    gender = factor(gender),
+    venue = factor(venue),
+    venue = fct_collapse(venue, Other = c("DCS", "DCW", "JUV"))
+  ) %>% 
+  select(-c(dob_anon, referral_date, event_code, police_agency)) %>% 
+  replace_na(list(gender = "Unknown"))
+```
+
+## D12_case_event
+
++ One record = one event within a case
+    + There is no **level** to this data
++ Event Docket Date: indicates the date of a future hearing
++ Event Code: indicates if the defendant failed to appear
+    + missing values may include some DEFFTA
+    + need to crosscheck with custody history to fill up missing values
+
+```{r}
+D12_case_event <- D12_case_event %>% 
+  mutate(event_docket_date = ymd(event_docket_date)) %>% 
+  mutate_at(c("defendant_event_status", "event_code"), factor) %>% 
+  select(-c(case_types, event_enter_date, venue))
+```
+
+## D13_case_event_key
+
+We need to classify the stages of the case as follows:
++ Case Setting (During)
++ Pre Case Setting (Before)
++ Post Case Setting (Before)
+
+```{r}
+D13_case_event_key <- D13_case_event_key %>%
+  mutate_at(c("hearing_code"), factor) %>% 
+  mutate(
+    case_setting_stage = fct_collapse(
+      hearing_code,
+      during = c("HRCS", "HRCSGP", "HRCSNWK", "HRCSNWS", "HRCSWK", "HRCSWS"),
+      before = c(
+        "CSHNOWV", "DEFBWO", "DRGTH", "HR1AP", "HR1APB", 
+        "HR2AP", "HRARRSC", "HRBOND", "HRCOMP", "HRCOMPAR",
+        "HRCOMPBS", "HRCOMPCS", "HRCOMPKA", "HRCOMPKC", 
+        "HRCOMPKT", "HRCOMPTR", "HRCPLSNT", "HRCRMO"
+      ),
+      after = c(
+        "HRCTCOMP", "HROM", "HROMCON", "HRPLEA", "HRPT", "HRSNTSC", "HRSTATCF", 
+        "LECSREC", "MOCCAP", "TRSTSC", "TRSTSCCN", "WARARRDC", "WARARRSC"
+      ),
+      other = c("HRARDR", "HRBWSC", "HRDR1", "HRDR2", "HRDRC")
+    )
+  ) %>% 
+  replace_with_na(list(case_setting_stage = c("DEFFTA", "DEFFTABT")))
+```
+
+## D14_case_type
+
+This dataset does not map to anything, so we will ignore it. 
+
+## D21_charge
+
++ Offense end date treated the same as start date if not missing
++ Additional columns:
+    + we have defined if charges are enhanced
+
+```{r}
+D21_charge <- D21_charge %>% 
+  mutate_at(c("offense_start_date", "offense_end_date", "filing_date", "disposition_date"), mdy) %>% 
+  # mutate_at(c("disposition_code"), factor) %>% 
+  mutate(
+    offense_end_date = if_else(is.na(offense_end_date), offense_start_date, offense_end_date),
+    charge_enhanced = if_else(is.na(enhancements), "No", "Yes"),
+    charge_code = str_to_upper(str_trim(
+      str_split(string = current_charge_s, pattern = '-', n = 2, simplify = TRUE)[,1]
+    ))
+  ) %>% 
+  select(-c(referral_date, referral_charge_s, original_charge_s, warning, current_charge_s, description, enhancements))
+```
+
+## D22_charge_def
+
++ Charges classed as:
+    + felony v/s misdemeanour
+    + violent v/s non-violent
+
+```{r}
+D22_charge_def <- D22_charge_def %>% 
+  mutate(
+    code = if_else(str_detect(code, "[A-Z]"), code, str_pad(code, 5, "left", "0")),
+    charge_class = case_when(
+      class %in% c('A', 'B', 'C') ~ "Felony",
+      class %in% c('U', 'GM') ~ "Misdemeanour",
+      TRUE ~ "Other"
+    ),
+    is_violent = if_else(violent == 1, "Yes", "No/Maybe")
+  ) %>% 
+  select(-c(class, violent)) %>% 
+  # mutate_at(c("charge_class", "is_violent"), factor) %>% 
+  mutate(
+    charge_class = factor(
+      charge_class, levels = c("Felony", "Misdemeanour", "Other"), ordered = TRUE
+    ),
+    is_violent = factor(is_violent, levels = c("Yes", "No/Maybe"), ordered = TRUE)
+  )
+```
+
+## D23_dispo_key
+
++ Description used to identify the verdict (this is an approximation)
++ Disposition type is recategorized
+
+```{r}
+D23_dispo_key <- D23_dispo_key %>% 
+  mutate_at(c("type"), factor) %>% 
+  mutate(
+    type = fct_collapse(type, Other = c("Dismissed", "Decline or Other/Error")),
+    verdict = case_when(
+      str_detect(tolower(description), "guilty") ~ "guilty",
+      str_detect(tolower(description), "acquit") ~ "acquitted",
+      TRUE ~ "other"
+    )
+  ) %>% 
+  mutate_at(c("verdict"), factor)
+```
+
+## D24_crime_hist
+
++ Confirmed that "Display Sequence" is based on the order of offenses
++ Historical records classified based on age group and charge class
++ In-state v/s Out-of-state history identified
+
+```{r}
+
+D24_crime_hist <- D24_crime_hist %>% 
+  mutate(
+    jurisdiction_state = str_extract(jursidiction, "\\b[A-Z]{2}"),
+    age_group = if_else(startsWith(conviction_level, 'J'), "juvenile", "adult"),
+    charge_class = if_else(endsWith(conviction_level, 'M'), "misdemeanour", "felony"),
+    history_in_state = jurisdiction_state == 'WA'
+  ) %>% 
+  select(-c(jurisdiction_state, conviction_level))
+
+# # to confirm that display sequence is simply order of offenses (highest value = most recent)
+# 
+# non_missing_defendants <- D24_crime_hist %>% 
+#   group_by(defendant_id) %>% 
+#   summarise(no_of_missing = sum(is.na(offense_date))) %>% 
+#   filter(no_of_missing == 0) %>% 
+#   select(defendant_id) %>% 
+#   pull()
+# 
+# xxx <- D24_crime_hist %>% 
+#   filter(defendant_id %in% non_missing_defendants) %>% 
+#   group_by(defendant_id) %>% 
+#   mutate(
+#     offense_date = ymd(offense_date),
+#     charge_order = desc(rank(offense_date))
+#   )
+# 
+# xxx %>% filter(display_sequence == charge_order)
+
+```
+
+## D31_custody_hist
+
+```{r}
+D31_custody_hist <- D31_custody_hist %>% 
+  mutate_at(c("status_update_user"), factor) %>% 
+  mutate(status_update_user = fct_lump(status_update_user, other_level = "OTHER"))
+```
+
+## Combining datasets for analysis
+
++ Case events:
+    + join with Event Code Key to identify the case stage at which the defendant failed to appear
+    + rollup to find out whether (and number of times) each defendant failed to appear in each stage
+    + note: case stages are "before", "during" and "after" case setting
++ Charges:
+    + Representative charge: Sort charges based on class, seriousness and violent and create a ranking variable (charge code needs to be a factor)
+    + Disposition code: Join to identify disposition type and verdict (approx)
++ #
+
+
+```{r}
+
+# # confirmed that all defendant id's are present in both file case and case event records
+# setdiff(unique(D11_filed_cases$defendant_id), unique(D12_case_event$defendant_id))
+
+fta_case_stage <- D12_case_event %>%
+  left_join(D13_case_event_key, by = c("event_code" = "hearing_code")) %>%
+  group_by(file_number) %>%
+  case_setting_stage = na.locf(case_setting_stage, fromLast = FALSE, na.rm = FALSE) %>% 
+  filter(event_code %in% c("DEFFTA", "DEFFTABT"))
+
+
+
+```
