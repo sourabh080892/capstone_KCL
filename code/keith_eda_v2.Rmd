@@ -108,7 +108,7 @@ D11_filed_cases <- D11_filed_cases %>%
     venue = factor(venue),
     venue = fct_collapse(venue, Other = c("DCS", "DCW", "JUV"))
   ) %>% 
-  select(-c(dob_anon, referral_date, event_code, police_agency)) %>% 
+  select(-c(dob_anon, referral_date, event_code, police_agency, age)) %>% 
   replace_na(list(gender = "Unknown"))
 ```
 
@@ -203,9 +203,9 @@ D22_charge_def <- D22_charge_def %>%
   # mutate_at(c("charge_class", "is_violent"), factor) %>% 
   mutate(
     charge_class = factor(
-      charge_class, levels = c("Felony", "Misdemeanour", "Other"), ordered = TRUE
+      charge_class, levels = c("Other", "Misdemeanour", "Felony"), ordered = TRUE
     ),
-    is_violent = factor(is_violent, levels = c("Yes", "No/Maybe"), ordered = TRUE)
+    is_violent = factor(is_violent, levels = c("No/Maybe", "Yes"), ordered = TRUE)
   )
 ```
 
@@ -276,27 +276,31 @@ D31_custody_hist <- D31_custody_hist %>%
 
 ## Combining datasets for analysis
 
-+ Case events:
-    + join with Event Code Key to identify the case stage at which the defendant failed to appear
-    + rollup to find out whether (and number of times) each defendant failed to appear in each stage
-    + note: case stages are "before", "during" and "after" case setting
 + Charges:
-    + Representative charge: Sort charges based on class, seriousness and violent and create a ranking variable (charge code needs to be a factor)
-    + Disposition code: Join to identify disposition type and verdict (approx)
-+ #
-
+    + Representative charge: Sort charges based on class, seriousness and violent and rank in ascending order
+    + Charge codes ranked in alphabetical order in case of tie
++ Criminal history: 
+    + Level of data: one row per defendant
+    + filter for records containing latest offense date for each defendant
+    + Columns to include: age group, charge class and in/out of state jurisdiction for each defendant
+    + After left joining on D11_filed_cases, mutate to find **time since last conviction**
 
 ```{r}
 
 # # confirmed that all defendant id's are present in both file case and case event records
 # setdiff(unique(D11_filed_cases$defendant_id), unique(D12_case_event$defendant_id))
 
-fta_case_stage <- D12_case_event %>%
-  left_join(D13_case_event_key, by = c("event_code" = "hearing_code")) %>%
-  group_by(file_number) %>%
-  case_setting_stage = na.locf(case_setting_stage, fromLast = FALSE, na.rm = FALSE) %>% 
-  filter(event_code %in% c("DEFFTA", "DEFFTABT"))
+# to find the representative charge
 
+charge_ranks <- D22_charge_def %>% 
+  arrange(charge_class, seriousness, is_violent, code) %>% 
+  mutate(charge_rank = 1:n())
 
+rep_charge <- D21_charge %>% 
+  left_join(charge_ranks, by = c("charge_code" = "code")) %>% 
+  group_by(file_number) %>% 
+  mutate(max_charge_rank = max(charge_rank)) %>% 
+  filter(charge_rank == max_charge_rank) %>% 
+  select(file_number, charge_code)
 
 ```
