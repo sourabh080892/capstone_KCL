@@ -57,24 +57,46 @@ library(stringr)
 library(lubridate)
 library(naniar)
 library(zoo)
+```
 
-# LOAD IN DATA
+```{r}
+# # LOAD IN DATA
+# 
+# # Data for SU Part 1 - Filed Cases and Hearings
+# D11_filed_cases <- read_excel(here::here("data", "raw", "Data for SU Part 1 - Filed Cases and Hearings.xlsx"), sheet = "FiledCases SU") %>% clean_names()
+# D12_case_event <- read_excel(here::here("data", "raw", "Data for SU Part 1 - Filed Cases and Hearings.xlsx"), sheet = "CaseEvents SU") %>% clean_names()
+# D13_case_event_key <- read_excel(here::here("data", "raw", "Data for SU Part 1 - Filed Cases and Hearings.xlsx"), sheet = "CaseEvent Key") %>% clean_names()
+# D14_case_type <- read_excel(here::here("data", "raw", "Data for SU Part 1 - Filed Cases and Hearings.xlsx"), sheet = "CaseType Key") %>% clean_names()
+# 
+# # Data for SU Part 2
+# D21_charge <- read_excel(here::here("data", "raw", "Data for SU Part 2.xlsx"), sheet = "SU Charges") %>% clean_names()
+# D22_charge_def <- read_excel(here::here("data", "raw", "Data for SU Part 2.xlsx"), sheet = "Charge Definitions") %>% clean_names()
+# D23_dispo_key <- read_excel(here::here("data", "raw", "Data for SU Part 2.xlsx"), sheet = "Disposition Key") %>% clean_names()
+# D24_crime_hist <- read_excel(here::here("data", "raw", "Data for SU Part 2.xlsx"), sheet = "SU CrimHist") %>% clean_names()
+# 
+# # Data for SU Part 3 - custody history
+# D31_custody_hist <- read_excel(here::here("data", "raw", "Data for SU Part 3 - custody history.xlsx"), sheet = "CustodyHistory SU") %>% clean_names()
 
-# Data for SU Part 1 - Filed Cases and Hearings
-D11_filed_cases <- read_excel(here::here("data", "raw", "Data for SU Part 1 - Filed Cases and Hearings.xlsx"), sheet = "FiledCases SU") %>% clean_names()
-D12_case_event <- read_excel(here::here("data", "raw", "Data for SU Part 1 - Filed Cases and Hearings.xlsx"), sheet = "CaseEvents SU") %>% clean_names()
-D13_case_event_key <- read_excel(here::here("data", "raw", "Data for SU Part 1 - Filed Cases and Hearings.xlsx"), sheet = "CaseEvent Key") %>% clean_names()
-D14_case_type <- read_excel(here::here("data", "raw", "Data for SU Part 1 - Filed Cases and Hearings.xlsx"), sheet = "CaseType Key") %>% clean_names()
+```
 
-# Data for SU Part 2
-D21_charge <- read_excel(here::here("data", "raw", "Data for SU Part 2.xlsx"), sheet = "SU Charges") %>% clean_names()
-D22_charge_def <- read_excel(here::here("data", "raw", "Data for SU Part 2.xlsx"), sheet = "Charge Definitions") %>% clean_names()
-D23_dispo_key <- read_excel(here::here("data", "raw", "Data for SU Part 2.xlsx"), sheet = "Disposition Key") %>% clean_names()
-D24_crime_hist <- read_excel(here::here("data", "raw", "Data for SU Part 2.xlsx"), sheet = "SU CrimHist") %>% clean_names()
-
-# Data for SU Part 3 - custody history
-D31_custody_hist <- read_excel(here::here("data", "raw", "Data for SU Part 3 - custody history.xlsx"), sheet = "CustodyHistory SU") %>% clean_names()
-
+```{r message = FALSE, warning=FALSE}
+#loading data
+#
+# xlsx files -- Data for SU Part 1 - Filed Cases and Hearings
+D11_filed_cases <- read_excel("../Data/Data for SU Part 1 - Filed Cases and Hearings.xlsx", sheet = "FiledCases SU") %>% clean_names()
+D12_case_event <- read_excel("../Data/Data for SU Part 1 - Filed Cases and Hearings.xlsx", sheet = "CaseEvents SU") %>% clean_names()
+D13_case_event_key <- read_excel("../Data/Data for SU Part 1 - Filed Cases and Hearings.xlsx", sheet = "CaseEvent Key") %>% clean_names()
+D14_case_type <- read_excel("../Data/Data for SU Part 1 - Filed Cases and Hearings.xlsx", sheet = "CaseType Key") %>% clean_names()
+#
+# xlsx files -- Data for SU Part 2
+D21_charge <- read_excel("../Data/Data for SU Part 2.xlsx", sheet = "SU Charges") %>% clean_names()
+D22_charge_def <- read_excel("../Data/Data for SU Part 2.xlsx", sheet = "Charge Definitions") %>% clean_names()
+D23_dispo_key <- read_excel("../Data/Data for SU Part 2.xlsx", sheet = "Disposition Key") %>% clean_names()
+D24_crime_hist <- read_excel("../Data/Data for SU Part 2.xlsx", sheet = "SU CrimHist") %>% clean_names()
+#
+# xlsx files -- Data for SU Part 3 - custody history
+D31_custody_hist <- read_excel("../Data/Data for SU Part 3 - custody history.xlsx", sheet = "CustodyHistory SU") %>% clean_names()
+#
 ```
 
 # Cleaning the Data
@@ -108,7 +130,10 @@ D11_filed_cases <- D11_filed_cases %>%
     venue = factor(venue),
     venue = fct_collapse(venue, Other = c("DCS", "DCW", "JUV"))
   ) %>% 
-  select(-c(dob_anon, referral_date, event_code, police_agency, age)) %>% 
+  # select(-c(dob_anon, referral_date, event_code, police_agency, age)) %>%     #--- (-) SG
+  select(-c(dob_anon, referral_date, event_code, event_enter_date,              #--- (+) SG
+            police_agency, anon_le_number, age)) %>%                            #--- (+) SG
+
   replace_na(list(gender = "Unknown"))
 ```
 
@@ -119,6 +144,7 @@ D11_filed_cases <- D11_filed_cases %>%
 + Event Docket Date: indicates the date of a future hearing
 + Event Code: indicates if the defendant failed to appear
     + missing values may include some DEFFTA
++ Defendant event Status contains the current status of defendant -> In jail or OUT of jain
     + need to crosscheck with custody history to fill up missing values
 
 ```{r}
@@ -141,10 +167,11 @@ D13_case_event_key <- D13_case_event_key %>%
   mutate(
     case_setting_stage = fct_collapse(
       hearing_code,
+      arraignment = c("HRARRSC"),                                                      #--- (+) SG
       during = c("HRCS", "HRCSGP", "HRCSNWK", "HRCSNWS", "HRCSWK", "HRCSWS"),
       before = c(
         "CSHNOWV", "DEFBWO", "DRGTH", "HR1AP", "HR1APB", 
-        "HR2AP", "HRARRSC", "HRBOND", "HRCOMP", "HRCOMPAR",
+        "HR2AP", "HRBOND", "HRCOMP", "HRCOMPAR",
         "HRCOMPBS", "HRCOMPCS", "HRCOMPKA", "HRCOMPKC", 
         "HRCOMPKT", "HRCOMPTR", "HRCPLSNT", "HRCRMO"
       ),
@@ -152,7 +179,7 @@ D13_case_event_key <- D13_case_event_key %>%
         "HRCTCOMP", "HROM", "HROMCON", "HRPLEA", "HRPT", "HRSNTSC", "HRSTATCF", 
         "LECSREC", "MOCCAP", "TRSTSC", "TRSTSCCN", "WARARRDC", "WARARRSC"
       ),
-      other = c("HRARDR", "HRBWSC", "HRDR1", "HRDR2", "HRDRC")
+      drug_court = c("HRARDR", "HRBWSC", "HRDR1", "HRDR2", "HRDRC")                    #--- (+) SG: others -> drug_court
     )
   ) %>% 
   replace_with_na(list(case_setting_stage = c("DEFFTA", "DEFFTABT")))
@@ -193,19 +220,19 @@ D22_charge_def <- D22_charge_def %>%
   mutate(
     code = if_else(str_detect(code, "[A-Z]"), code, str_pad(code, 5, "left", "0")),
     charge_class = case_when(
-      class %in% c('A', 'B', 'C') ~ "Felony",
-      class %in% c('U', 'GM') ~ "Misdemeanour",
-      TRUE ~ "Other"
+      class %in% c('A', 'B', 'C') ~ 2,                            # "Felony",
+      class %in% c('U', 'GM') ~ 1,                                # "Misdemeanour",
+      TRUE ~ 0                                                    # "Other"
     ),
-    is_violent = if_else(violent == 1, "Yes", "No/Maybe")
+    is_violent = if_else(violent == 1, 1, 0)                      # "Yes", "No/Maybe"
   ) %>% 
   select(-c(class, violent)) %>% 
   # mutate_at(c("charge_class", "is_violent"), factor) %>% 
   mutate(
     charge_class = factor(
-      charge_class, levels = c("Other", "Misdemeanour", "Felony"), ordered = TRUE
+      charge_class, levels = c(0, 1, 2), ordered = TRUE                      # c("Other", "Misdemeanour", "Felony")
     ),
-    is_violent = factor(is_violent, levels = c("No/Maybe", "Yes"), ordered = TRUE)
+    is_violent = factor(is_violent, levels = c(0, 1), ordered = TRUE)        # c("No/Maybe", "Yes")
   )
 ```
 
@@ -292,15 +319,46 @@ D31_custody_hist <- D31_custody_hist %>%
 
 # to find the representative charge
 
-charge_ranks <- D22_charge_def %>% 
-  arrange(charge_class, seriousness, is_violent, code) %>% 
-  mutate(charge_rank = 1:n())
+# charge_ranks <- D22_charge_def %>% 
+#   arrange(charge_class, seriousness, is_violent, code) %>% 
+#   mutate(charge_rank = 1:n())
+# 
+# rep_charge <- D21_charge %>% 
+#   left_join(charge_ranks, by = c("charge_code" = "code")) %>% 
+#   group_by(file_number) %>% 
+#   mutate(max_charge_rank = max(charge_rank)) %>% 
+#   filter(charge_rank == max_charge_rank) %>% 
+#   select(file_number, charge_code)
 
-rep_charge <- D21_charge %>% 
-  left_join(charge_ranks, by = c("charge_code" = "code")) %>% 
-  group_by(file_number) %>% 
-  mutate(max_charge_rank = max(charge_rank)) %>% 
-  filter(charge_rank == max_charge_rank) %>% 
-  select(file_number, charge_code)
+```
 
+```{r}
+# join D21_charge and D22_charge_def to get representative charge
+D21_D22_charges <- left_join(D21_charge, D22_charge_def, by = c("charge_code" = "code"))
+
+# arrange/sort records as File_number-ASC, Class-DESC, Seriousness-DESC, Violent-DESC
+D21_D22_charges <- arrange(D21_D22_charges, file_number, desc(charge_class), desc(seriousness), desc(is_violent))
+
+# Representative charge for each file number, fetch first record of each file number
+represent_charge <- D21_D22_charges[!duplicated(D21_D22_charges$file_number),] %>%
+                  select(-c(offense_start_date, offense_end_date, filing_date, disposition_date,
+                            disposition_code, charge_enhanced))
+
+# this representative charges is merged with D11, filed cases
+D11_cases_rep_charge <- merge(x = D11_filed_cases, y = represent_charge, by = "file_number", all.x=TRUE)
+
+```
+
+```{r}
+ggplot(data=D11_cases_rep_charge, aes(x=seriousness)) +
+geom_bar() +
+geom_text(stat='count', aes(label=..count..), vjust=-0.5)
+
+ggplot(data=D11_cases_rep_charge, aes(x=charge_class)) +
+geom_bar() +
+geom_text(stat='count', aes(label=..count..), vjust=-0.5)
+
+ggplot(data=D11_cases_rep_charge, aes(x=is_violent)) +
+geom_bar() +
+geom_text(stat='count', aes(label=..count..), vjust=-0.5)
 ```
