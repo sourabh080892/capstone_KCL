@@ -157,9 +157,9 @@ D12_case_event <- D12_case_event %>%
 ## D13_case_event_key
 
 We need to classify the stages of the case as follows:
-+ Case Setting (During)
-+ Pre Case Setting (Before)
-+ Post Case Setting (Before)
++ Arraignment
++ Case Setting
++ Drug Court
 
 ```{r}
 D13_case_event_key <- D13_case_event_key %>%
@@ -168,21 +168,21 @@ D13_case_event_key <- D13_case_event_key %>%
     case_setting_stage = fct_collapse(
       hearing_code,
       arraignment = c("HRARRSC"),                                                      #--- (+) SG
-      during = c("HRCS", "HRCSGP", "HRCSNWK", "HRCSNWS", "HRCSWK", "HRCSWS"),
-      before = c(
-        "CSHNOWV", "DEFBWO", "DRGTH", "HR1AP", "HR1APB", 
-        "HR2AP", "HRBOND", "HRCOMP", "HRCOMPAR",
-        "HRCOMPBS", "HRCOMPCS", "HRCOMPKA", "HRCOMPKC", 
-        "HRCOMPKT", "HRCOMPTR", "HRCPLSNT", "HRCRMO"
-      ),
-      after = c(
-        "HRCTCOMP", "HROM", "HROMCON", "HRPLEA", "HRPT", "HRSNTSC", "HRSTATCF", 
-        "LECSREC", "MOCCAP", "TRSTSC", "TRSTSCCN", "WARARRDC", "WARARRSC"
-      ),
+      case_setting = c("HRCS", "HRCSGP", "HRCSNWK", "HRCSNWS", "HRCSWK", "HRCSWS"),
+      # before = c(
+      #   "CSHNOWV", "DEFBWO", "DRGTH", "HR1AP", "HR1APB", 
+      #   "HR2AP", "HRBOND", "HRCOMP", "HRCOMPAR",
+      #   "HRCOMPBS", "HRCOMPCS", "HRCOMPKA", "HRCOMPKC", 
+      #   "HRCOMPKT", "HRCOMPTR", "HRCPLSNT", "HRCRMO"
+      # ),
+      # after = c(
+      #   "HRCTCOMP", "HROM", "HROMCON", "HRPLEA", "HRPT", "HRSNTSC", "HRSTATCF", 
+      #   "LECSREC", "MOCCAP", "TRSTSC", "TRSTSCCN", "WARARRDC", "WARARRSC"
+      # ),
       drug_court = c("HRARDR", "HRBWSC", "HRDR1", "HRDR2", "HRDRC")                    #--- (+) SG: others -> drug_court
-    )
-  ) %>% 
-  replace_with_na(list(case_setting_stage = c("DEFFTA", "DEFFTABT")))
+    ))
+  # ) %>% 
+  # replace_with_na(list(case_setting_stage = c("DEFFTA", "DEFFTABT")))
 ```
 
 ## D14_case_type
@@ -349,6 +349,19 @@ D11_cases_rep_charge <- merge(x = D11_filed_cases, y = represent_charge, by = "f
 
 ```
 
+## Capstone Meeting Updates - 10/22/2019
+
+1.	 representative charge for each File Number as one File Number may have multiple charges.
+2.	 Critical stage of a case is case setting  (Arraignment, case setting, before case setting, after case setting)
+
+3.	Last Arraignment Date
+
+4.	Filling missing Defendant_Event_Status field in CaseEvents table 
+
+
+  + representative charge for each File Number as one File Number may have multiple charges.
+
+
 ```{r}
 ggplot(data=D11_cases_rep_charge, aes(x=seriousness)) +
 geom_bar() +
@@ -362,3 +375,29 @@ ggplot(data=D11_cases_rep_charge, aes(x=is_violent)) +
 geom_bar() +
 geom_text(stat='count', aes(label=..count..), vjust=-0.5)
 ```
+
+
+  + Critical stage of a case is case setting  (Arraignment, case setting, before case setting, after case setting)
+  
+```{r}
+'%ni%' <- Negate('%in%')
+
+# D12_case_events and D13_case_event_key to map the hearing codes
+D12_D13_case_event_stages <- left_join(D12_case_event, D13_case_event_key, by = c("event_code" = "hearing_code"))
+
+# arrange/sort records as File_number-ASC, Docket_date-ASC
+D12_D13_case_event_stages <- arrange(D12_D13_case_event_stages, file_number, desc(event_docket_date))
+
+# Convert age into categories as mentioned in Data dictionary
+# D12_D13_case_event_stages <-D12_D13_case_event_stages %>%  
+#                             mutate(case_stage = ifelse(case_setting_stage %ni% c('arraignment', 'case_setting'), '<19', 
+#                                           ifelse(age > 19 & age < 30, '20-29',
+#                                                 ifelse(age >= 30 & age < 40, '30-39',
+#                                                       ifelse(age >=40  & age < 50, '40-49',
+#                                                             ifelse(age >= 50 & age < 60, '50-59',
+#                                                                   ifelse(age >= 60, '>60',0))))))) %>%
+#                   select(c(file_number, defendant_id, dob_anon, gender, age_cate))
+```
+
+
+
