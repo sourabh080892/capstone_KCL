@@ -393,6 +393,7 @@ last_arraignment_date <- D12_D13_case_event_stages[D12_D13_case_event_stages$cas
                         slice(1) %>%
                         ungroup()
 colnames(last_arraignment_date)[colnames(last_arraignment_date) == 'event_docket_date'] <- 'last_arr_date'
+colnames(last_arraignment_date)[colnames(last_arraignment_date) == 'case_setting_stage'] <- 'arraignment'
 
 # D12_D13 first case setting date
 first_case_setting_date <- D12_D13_case_event_stages[D12_D13_case_event_stages$case_setting_stage == 'case_setting', ] %>%
@@ -402,10 +403,18 @@ first_case_setting_date <- D12_D13_case_event_stages[D12_D13_case_event_stages$c
                         slice(1) %>%
                         ungroup()
 colnames(first_case_setting_date)[colnames(first_case_setting_date) == 'event_docket_date'] <- 'first_cs_date'
+colnames(first_case_setting_date)[colnames(first_case_setting_date) == 'case_setting_stage'] <- 'case_setting'
 
 # join 3 dataframes to get last_arraignment_date and first_case_setting_date for each file number
 D12_D13_case_event_stages <- left_join(D12_D13_case_event_stages, last_arraignment_date, by = c("file_number"))
 D12_D13_case_event_stages <- left_join(D12_D13_case_event_stages, first_case_setting_date, by = c("file_number"))
+
+# new column with 4 categories: A(Arraignment), B(Before Case Setting), C(Case Setting), D(After Case Setting)
+D12_D13_case_event_stages <-D12_D13_case_event_stages %>%  
+      mutate(case_stage = ifelse(event_docket_date == last_arr_date, 'A(Arraignment)', 
+                                ifelse(event_docket_date > last_arr_date & event_docket_date < first_cs_date, 'B(Before Case Setting)',
+                                  ifelse(event_docket_date == first_cs_date, 'C(Case Setting)',
+                                        ifelse(event_docket_date > first_cs_date, 'D(After Case Setting)', 'Question')))))
 
 # arrange/sort records as File_number-ASC, Docket_date-ASC
 # D12_D13_case_event_stages <- arrange(D12_D13_case_event_stages, file_number, desc(event_docket_date))
