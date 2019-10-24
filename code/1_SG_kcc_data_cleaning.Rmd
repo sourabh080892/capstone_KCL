@@ -157,6 +157,19 @@ D21_charge <- D21_charge %>%
 # # Merge D11_filed_cases_SU and D12_case_events_SU tables on "File Number" and "Defendant ID"
 # filed_case_events =  merge(x = D11_filed_cases, y = D12_case_event, by = c("file_number", "defendant_id"), all = TRUE) %>% select(-c("venue.x", "age_in_days", "age"))
 
+##### Merge D21 and D23
+D21_D23 =  merge(x = D21_charge, y = D23_dispo_key, by = "disposition_code", all = TRUE) %>%
+                      select(c("file_number", "filing_date", "charge_code", "enhancements",
+                                "disposition_date", "disposition_code", "description.x", "ranking", "type"))
+
+ggplot(data=D21_D23, aes(x=type)) +
+geom_bar() +
+geom_text(stat='count', aes(label=..count..), vjust=-0.5)
+
+```
+
+
+```{r}
 # Merge Filed_cases_SU and SU_charges tables on Filenumber: we will be having charges and disposition date per file
 filed_case_charges =  merge(x = D11_filed_cases, y = D21_charge, by = "file_number", all = TRUE) %>%
                       select(-c("dob_anon", "referral_date.x", "referral_date.y", "referral_charge_s",
