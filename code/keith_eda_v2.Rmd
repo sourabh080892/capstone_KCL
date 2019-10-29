@@ -58,6 +58,7 @@ library(lubridate)
 library(naniar)
 library(zoo)
 library(openxlsx)
+library(data.table)
 ```
 
 ```{r}
@@ -151,7 +152,7 @@ D11_filed_cases <- D11_filed_cases %>%
 ```{r}
 D12_case_event <- D12_case_event %>% 
   mutate(event_docket_date = ymd(event_docket_date)) %>% 
-  mutate_at(c("defendant_event_status", "event_code"), factor) %>% 
+  # mutate_at(c("defendant_event_status", "event_code"), factor) %>% 
   select(-c(case_types, event_enter_date, venue))
 ```
 
@@ -164,7 +165,7 @@ We need to classify the stages of the case as follows:
 
 ```{r}
 D13_case_event_key <- D13_case_event_key %>%
-  mutate_at(c("hearing_code"), factor) %>% 
+  # mutate_at(c("hearing_code"), factor) %>% 
   mutate(
     case_setting_stage = fct_collapse(
       hearing_code,
@@ -244,7 +245,7 @@ D22_charge_def <- D22_charge_def %>%
 
 ```{r}
 D23_dispo_key <- D23_dispo_key %>% 
-  mutate_at(c("type"), factor) %>% 
+  # mutate_at(c("type"), factor) %>% 
   mutate(
     type = fct_collapse(type, Other = c("Dismissed", "Decline or Other/Error")),
     verdict = case_when(
@@ -297,9 +298,9 @@ D24_crime_hist <- D24_crime_hist %>%
 ## D31_custody_hist
 
 ```{r}
-D31_custody_hist <- D31_custody_hist %>% 
-  mutate_at(c("status_update_user"), factor) %>% 
-  mutate(status_update_user = fct_lump(status_update_user, other_level = "OTHER"))
+# D31_custody_hist <- D31_custody_hist %>% 
+#   mutate_at(c("status_update_user"), factor) %>% 
+#   mutate(status_update_user = fct_lump(status_update_user, other_level = "OTHER"))
 
 # Convert date from integer value to date value. Excel stores number of days from 01-01-1900 as date
 D31_custody_hist$status_history_date = convertToDate(D31_custody_hist$status_history_date)
@@ -415,10 +416,10 @@ D12_D13_case_event_stages <- left_join(D12_D13_case_event_stages, first_case_set
 
 # new column with 4 categories: A(Arraignment), B(Before Case Setting), C(Case Setting), D(After Case Setting)
 D12_D13_case_event_stages <-D12_D13_case_event_stages %>%  
-      mutate(case_stage = ifelse(event_docket_date == last_arr_date, 'A(Arraignment)', 
+      mutate(case_stage = ifelse(event_docket_date <= last_arr_date, 'A(Arraignment)', 
                                 ifelse(event_docket_date > last_arr_date & event_docket_date < first_cs_date, 'B(Before Case Setting)',
                                   ifelse(event_docket_date == first_cs_date, 'C(Case Setting)',
-                                        ifelse(event_docket_date > first_cs_date, 'D(After Case Setting)', 'Question'))))) %>%
+                                        ifelse(event_docket_date > first_cs_date, 'D(After Case Setting)', event_code))))) %>%
   select(-c(description, case_setting_stage, arraignment, case_setting))
 
 # arrange/sort records as File_number-ASC, Docket_date-ASC
@@ -434,6 +435,75 @@ D12_D13_case_event_stages <-D12_D13_case_event_stages %>%
 #                                                                   ifelse(age >= 60, '>60',0))))))) %>%
 #                   select(c(file_number, defendant_id, dob_anon, gender, age_cate))
 ```
+
+  + Filling missing Defendant_Event_Status field in CaseEvents table
+
+```{r}
+##########------------------ EXPORT D12_D13_case_event_stages FOR PYTHON ------------------##########
+##########---------------------- EXPORT D31_custody_hist FOR PYTHON -----------------------##########
+
+write.csv(D12_D13_case_event_stages, '../Data/D12_D13_case_event_stages.csv')
+write.csv(D31_custody_hist, '../Data/D31_custody_hist.csv')
+
+# # 1st condition - docket_date >= current_status_date --> current_status
+# # Custody status only taking current_status
+# custody_current_status <- D31_custody_hist %>%
+#                             select(defendant_id, current_status_date, current_status) %>% 
+#                             group_by(defendant_id, current_status_date, current_status) %>% 
+#                             arrange(defendant_id, desc(current_status_date)) %>%
+#                             slice(1) %>%
+#                             ungroup()
+# 
+# # Join this Custody Status data with D12_D13_case_event_stages
+# D12_D13_case_event_stages <- D12_D13_case_event_stages %>%
+#         left_join(custody_current_status, by = c("defendant_id")) %>%
+#         mutate(operated_custody_status = ifelse(is.na(defendant_event_status) == TRUE & event_docket_date >= current_status_date,                                                 current_status, defendant_event_status)) %>%
+#         select(-c(current_status_date, current_status))
+# 
+# 
+# #---------------------
+# #---------------------
+# # 2nd condition - docket_date <= current_status_date && docket_date >= max(status_history_date) --> custody_status_history
+# custody_history_status <- D31_custody_hist %>%
+#                             select(-c(status_update_user)) %>% 
+#                             group_by(defendant_id) %>% 
+#                             arrange(defendant_id, desc(current_status_date), desc(status_history_date)) %>%
+#                             slice(1) %>%
+#                             ungroup()
+# 
+# # Join this Custody Status data with D12_D13_case_event_stages
+# D12_D13_case_event_stages <- D12_D13_case_event_stages %>%
+#       left_join(custody_history_status, by = c("defendant_id")) %>%
+#       mutate(operated_custody_status = ifelse(is.na(operated_custody_status) == TRUE & (event_docket_date >= status_history_date & event_docket_date <= current_status_date), custody_status_history, defendant_event_status))
+```
+
+```{r}
+D1213 <- data.table(D12_D13_case_event_stages)
+D31 <- data.table(D31_custody_hist)
+
+# test <- left_join( 
+#   D12_D13_case_event_stages, D31_custody_hist,
+#   by = ('defendant_id' = 'defendant_id'), rolling = event_docket_date < status_history_date)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
