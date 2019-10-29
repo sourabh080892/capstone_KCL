@@ -540,7 +540,31 @@ write.csv(dfa_by_category_case_stage, '../Data/dfa_by_category_case_stage_eda.cs
 
 ```
 
++ disposition time
 
+```{r}
+dispo_time <- D21_D22_charges %>%
+              group_by(file_number) %>% 
+              arrange(file_number, desc(disposition_date)) %>%
+              slice(1) %>%
+              ungroup() %>%
+              select(file_number, filing_date, disposition_date)
+
+dispo_time <- D12_D13_case_event_stages %>%
+              left_join(dispo_time, by = c("file_number")) %>%
+              select(file_number, last_arr_date, case_stage, filing_date, disposition_date) %>%
+              mutate(time_for_dispo_filing = as.Date(disposition_date) - as.Date(filing_date)) %>%
+              mutate(time_for_dispo_arraign = as.Date(disposition_date) - as.Date(last_arr_date))
+
+dispo_time <- dispo_time %>%
+              group_by(file_number) %>% 
+              arrange(file_number, desc(case_stage), desc(filing_date), desc(disposition_date)) %>%
+              slice(1) %>%
+              ungroup()
+
+# export dispo_time to csv for powerbi
+write.csv(dispo_time, '../Data/dispo_time_eda.csv')
+```
 
 
 
