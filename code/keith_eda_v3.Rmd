@@ -334,3 +334,18 @@ first_case_setting <- D12_case_event %>%
 
 ```
 
+```{r}
+D12_case_event %>%  
+  mutate(
+    event_group = fct_collapse(
+      event_code,
+      arraignment = c("HRARRSC"),
+      case_setting = c("HRCSGP", "HRCSNWK", "HRCSNWS", "HRCSWK", "HRCSWS"), 
+      group_other = TRUE
+    )
+  ) %>% 
+  group_by(event_group) %>% 
+  summarise(no_of_cases = n_distinct(file_number)) %>% 
+  arrange(desc(no_of_cases))
+```
+
