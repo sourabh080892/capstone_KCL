@@ -442,8 +442,11 @@ D12_D13_case_event_stages <-D12_D13_case_event_stages %>%
 ##########------------------ EXPORT D12_D13_case_event_stages FOR PYTHON ------------------##########
 ##########---------------------- EXPORT D31_custody_hist FOR PYTHON -----------------------##########
 
-write.csv(D12_D13_case_event_stages, '../Data/D12_D13_case_event_stages.csv')
-write.csv(D31_custody_hist, '../Data/D31_custody_hist.csv')
+# write.csv(D12_D13_case_event_stages, '../Data/D12_D13_case_event_stages.csv')
+# write.csv(D31_custody_hist, '../Data/D31_custody_hist.csv')
+
+##########------------------ EXPORT D12_D13_case_event_stages FOR PYTHON ------------------##########
+##########---------------------- EXPORT D31_custody_hist FOR PYTHON -----------------------##########
 
 # # 1st condition - docket_date >= current_status_date --> current_status
 # # Custody status only taking current_status
@@ -477,25 +480,65 @@ write.csv(D31_custody_hist, '../Data/D31_custody_hist.csv')
 #       mutate(operated_custody_status = ifelse(is.na(operated_custody_status) == TRUE & (event_docket_date >= status_history_date & event_docket_date <= current_status_date), custody_status_history, defendant_event_status))
 ```
 
+
++ preparing dataset for EDA in powerBI
+
 ```{r}
-D1213 <- data.table(D12_D13_case_event_stages)
-D31 <- data.table(D31_custody_hist)
+# defendants ID's where DEFFTA exists
+def_dfa_codes <- D12_D13_case_event_stages[D12_D13_case_event_stages$event_code == 'DEFFTA', ] %>%
+                  select(defendant_id, event_code) %>%
+                  group_by(defendant_id) %>%
+                  slice(1) %>%
+                  ungroup()
+
+colnames(def_dfa_codes) <- c("defendant_id", "dfa_event_code")
+
+# merge this "def_dfa_codes" with D12_D13_case_event_stages
+D12_D13_case_event_stages <- D12_D13_case_event_stages %>%
+        left_join(def_dfa_codes, by = c("defendant_id"))
+
+# merge "D12_D13_case_event_stages" leftjoin "D11_cases_rep_charge" to get age group, gender, venue, charge for each file number
+dfa_by_category <- D12_D13_case_event_stages %>%
+        left_join(D11_cases_rep_charge, by = c("file_number","defendant_id"))
+
+
+# merge "dfa_by_category" left join "D24_crime_hist" to get criminal history status
+dfa_by_category$crime_hist <- ifelse(is.na(match(dfa_by_category$defendant_id, D24_crime_hist$defendant_id)),"No", "Yes")
+
+dfa_by_category$case_stage[is.na(dfa_by_category$case_stage)] <- "_"
+dfa_by_category$dfa_event_code[is.na(dfa_by_category$dfa_event_code)] <- ""
+
+dfa_by_category$case_types[is.na(dfa_by_category$case_types)] <- "Other"
+
+dfa_by_category$age_group[is.na(dfa_by_category$age_group)] <- "Other"
+dfa_by_category$charge_code[is.na(dfa_by_category$charge_code)] <- "Other"
+dfa_by_category$description[is.na(dfa_by_category$description)] <- "Other"
+dfa_by_category$seriousness[is.na(dfa_by_category$seriousness)] <- 0
+dfa_by_category$charge_class[is.na(dfa_by_category$charge_class)] <- 0
+dfa_by_category$is_violent[is.na(dfa_by_category$is_violent)] <- 99
+
+# remove records where dfa_event_code is blank
+dfa_by_category <- dfa_by_category[dfa_by_category$dfa_event_code == 'DEFFTA', ]
+
+# export dfa_by_category to csv for powerbi
+write.csv(dfa_by_category, '../Data/dfa_by_category_eda.csv')
+
+# dfa_by_category for case stages -- keeping maximum case stage
+# D12_D13 first case setting date
+dfa_by_category_case_stage <- dfa_by_category %>%
+                        group_by(file_number) %>% 
+                        arrange(file_number, desc(case_stage)) %>%
+                        slice(1) %>%
+                        ungroup()
+
+# export dfa_by_category to csv for powerbi
+write.csv(dfa_by_category_case_stage, '../Data/dfa_by_category_case_stage_eda.csv')
 
 # test <- left_join( 
 #   D12_D13_case_event_stages, D31_custody_hist,
 #   by = ('defendant_id' = 'defendant_id'), rolling = event_docket_date < status_history_date)
 
 ```
-
-
-
-
-
-
-
-
-
-
 
 
 
