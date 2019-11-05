@@ -356,82 +356,82 @@ Need to read in the CSV file to work with it for further EDA
 
 ```{r}
 
-# # condition_1 : if defendant status is not missing, use defendant_event_status
-# # condition_2 : if docket_date is >= status_history_date and < current_status_date than custody_status_history
-# # else: current_status
-# 
-# case_events <- D12_case_event %>% 
-#   mutate(
-#     event_docket_date_1 = if_else(
-#       is.na(event_docket_date), lag(event_docket_date), event_docket_date
-#     )
-#   ) %>% 
-#   filter(is.na(defendant_event_status))
-# 
-# get_near_status_history_dt <- function(def_id) {
-#   D31_custody_hist$status_history_date[D31_custody_hist$defendant_id == def_id]
-# }
-# get_near_current_status_dt <- function(def_id) {
-#   D31_custody_hist$current_status_date[D31_custody_hist$defendant_id == def_id]
-# }
-# 
-# case_events$nearest_status_hist_date <- as.Date(NA)
-# case_events$nearest_current_status_date <- as.Date(NA)
-# 
-# for (i in 1:nrow(case_events)) {
-#   def_id <- case_events$defendant_id[i]
-#   status_hist_dt <- get_near_status_history_dt(def_id)
-#   current_docket_dt <- case_events$event_docket_date[i]
-#   case_events$nearest_status_hist_date[i] <- as.Date(
-#     status_hist_dt[which.closest(status_hist_dt, current_docket_dt)]
-#   )
-# }
-# 
-# for (i in 1:nrow(case_events)) {
-#   def_id <- case_events$defendant_id[i]
-#   curr_status_dt <- get_near_current_status_dt(def_id)
-#   current_docket_dt <- case_events$event_docket_date[i]
-#   case_events$nearest_current_status_date[i] <- as.Date(
-#     curr_status_dt[which.closest(curr_status_dt, current_docket_dt)]
-#   )
-# }
-# 
-# events_def_status_na_fill <- left_join(
-#   case_events, D31_custody_hist, 
-#   by = c(
-#     "defendant_id" = "defendant_id", 
-#     "nearest_status_hist_date" = "status_history_date", 
-#     "nearest_current_status_date" = "current_status_date"
-#   )
-# ) %>% 
-#   mutate(
-#     correct_defendant_status = if_else(
-#       condition = !is.na(defendant_event_status),
-#       true = defendant_event_status,
-#       false = if_else(
-#         condition = event_docket_date >= nearest_status_hist_date & 
-#           event_docket_date < nearest_current_status_date,
-#         true = custody_status_history,
-#         false = current_status
-#       )
-#     )
-#   ) %>% 
-#   select(
-#     file_number, defendant_id, event_code, event_docket_date, correct_defendant_status
-#   ) %>% 
-#   rename(defendant_status = correct_defendant_status)
-# 
-# events <- D12_case_event %>% 
-#   filter(!is.na(defendant_event_status)) %>% 
-#   select(file_number, defendant_id, event_code, event_docket_date, defendant_event_status) %>% 
-#   rename(defendant_status = defendant_event_status)
-# 
-# events_with_missing_status <- bind_rows(events_def_status_na_fill, events)
-# 
-# write_csv(
-#   events_with_missing_status, 
-#   path = here::here("data", "processed", "events_with_missing_def_status.csv")
-# )
+# condition_1 : if defendant status is not missing, use defendant_event_status
+# condition_2 : if docket_date is >= status_history_date and < current_status_date than custody_status_history
+# else: current_status
+
+case_events <- D12_case_event %>%
+  mutate(
+    event_docket_corrected = if_else(
+      is.na(event_docket_date), lag(event_docket_date), event_docket_date
+    )
+  ) %>%
+  filter(is.na(defendant_event_status))
+
+get_near_status_history_dt <- function(def_id) {
+  D31_custody_hist$status_history_date[D31_custody_hist$defendant_id == def_id]
+}
+get_near_current_status_dt <- function(def_id) {
+  D31_custody_hist$current_status_date[D31_custody_hist$defendant_id == def_id]
+}
+
+case_events$nearest_status_hist_date <- as.Date(NA)
+case_events$nearest_current_status_date <- as.Date(NA)
+
+for (i in 1:nrow(case_events)) {
+  def_id <- case_events$defendant_id[i]
+  status_hist_dt <- get_near_status_history_dt(def_id)
+  current_docket_dt <- case_events$event_docket_date[i]
+  case_events$nearest_status_hist_date[i] <- as.Date(
+    status_hist_dt[which.closest(status_hist_dt, current_docket_dt)]
+  )
+}
+
+for (i in 1:nrow(case_events)) {
+  def_id <- case_events$defendant_id[i]
+  curr_status_dt <- get_near_current_status_dt(def_id)
+  current_docket_dt <- case_events$event_docket_date[i]
+  case_events$nearest_current_status_date[i] <- as.Date(
+    curr_status_dt[which.closest(curr_status_dt, current_docket_dt)]
+  )
+}
+
+events_def_status_na_fill <- left_join(
+  case_events, D31_custody_hist,
+  by = c(
+    "defendant_id" = "defendant_id",
+    # "nearest_current_status_date" = "current_status_date",
+    "nearest_status_hist_date" = "status_history_date"
+  )
+) %>%
+  mutate(
+    correct_defendant_status = if_else(
+      condition = !is.na(defendant_event_status),
+      true = defendant_event_status,
+      false = if_else(
+        condition = event_docket_date >= nearest_status_hist_date &
+          event_docket_date < nearest_current_status_date,
+        true = custody_status_history,
+        false = current_status
+      )
+    )
+  ) %>%
+  select(
+    file_number, defendant_id, event_code, event_docket_corrected, correct_defendant_status
+  ) %>%
+  rename(defendant_status = correct_defendant_status)
+
+events <- D12_case_event %>%
+  filter(!is.na(defendant_event_status)) %>%
+  select(file_number, defendant_id, event_code, event_docket_date, defendant_event_status) %>%
+  rename(defendant_status = defendant_event_status, event_docket_corrected = event_docket_date)
+
+events_with_missing_status <- bind_rows(events_def_status_na_fill, events)
+
+write_csv(
+  events_with_missing_status,
+  path = here::here("data", "processed", "events_with_missing_def_status.csv")
+)
 
 ```
 
