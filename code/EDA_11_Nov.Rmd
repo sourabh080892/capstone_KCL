@@ -13,6 +13,8 @@ output:
 
 ```{r setup, include=FALSE}
 
+######### Seach for text ----   Data Cleaning has been completed, now the analysis   ----   ############
+
 knitr::opts_chunk$set(
 	fig.width = 8.5,
 	# include = FALSE,
@@ -58,6 +60,8 @@ library(lubridate)
 library(naniar)
 library(zoo)
 library(birk)
+library(scales)
+library(doBy)
 
 # LOAD IN DATA
 
@@ -97,7 +101,7 @@ D24_crime_hist <- read_excel("../Data/Data for SU Part 2.xlsx", sheet = "SU Crim
 D31_custody_hist <- read_excel("../Data/Data for SU Part 3 - custody history.xlsx", sheet = "CustodyHistory SU") %>% clean_names()
 
 # treated events_with_missing_status
-events_with_missing_status <- read.csv("../calculated_data/events_with_missing_status.csv", header = TRUE)
+events_with_missing_def_status <- read.csv("../calculated_data/events_with_missing_def_status.csv", header = TRUE)
 #
 ```
 
@@ -135,12 +139,22 @@ D11_filed_cases <- D11_filed_cases %>%
   mutate_at(c("gender", "venue", "case_types"), factor) %>% 
   select(-c(dob_anon, referral_date, event_code, police_agency, age, anon_le_number))
 
+replace_na(list(gender = "Unknown"))
+write.csv(D11_filed_cases, '../calculated_data/D11_filed_cases.csv')  # for Basic Stat : PowerBI Visuals, Snapshot included below
 
-# write.csv(D11_filed_cases, '../calculated_data/D11_filed_cases.csv')
+hist(D11_filed_cases$event_enter_date, breaks = seq(min(D11_filed_cases$event_enter_date), max(D11_filed_cases$event_enter_date), length.out = 30))
+
+summary(D11_filed_cases)
 
 ```
 
 ![D11](1.png)
+
+![D11](1.1.png)
+Missing Values:
+  + We have `37 + 3 = 40` records where Gender is either missing or unknown
+  + Case type has `8031` records with missing data
+  + We don't have age or age group for 23 filed cases
 
 ## D12_case_event
 
@@ -150,18 +164,25 @@ D11_filed_cases <- D11_filed_cases %>%
 + Event Code: indicates if the defendant failed to appear
     + missing values may include some `DEFFTA`
     + need to crosscheck with `Custody History SU` to fill up missing values in `Defendant Event Status`
-+ We do not require these columns -> `Case Types`, `Event Enter Date`, `Venue`
++ We do not require these columns -> `Case Types`, `Venue`
 
 ```{r}
+# event enter date is required to check when DFA happend
 D12_case_event <- D12_case_event %>% 
   mutate(event_docket_date = ymd(event_docket_date)) %>% 
-  # mutate_at(c("defendant_event_status", "event_code"), factor) %>% 
-  select(-c(case_types, event_enter_date, venue))
+  mutate_at(c("defendant_event_status", "event_code"), factor) %>%
+  select(-c(case_types, venue))
+
+summary(D12_case_event)
 
 write.csv(D12_case_event, '../calculated_data/D12_case_event.csv')
 ```
 
 ![D12](2.png)
+
+Missing Values:
+  + We have `140515` records where event docket date is missing
+  + We have `255192` records where Defendant event status is missing
 
 ## D13_case_event_key
 
@@ -214,6 +235,8 @@ This dataset does not map to anything, so we will ignore it.
 + We do not require these columns -> `Referral Date`, `Referral Charge(s)`, `Original Charge(s)`, `Warning`, `Description`
 
 ```{r}
+D21_charge <- read_excel("../Data/Data for SU Part 2.xlsx", sheet = "SU Charges") %>% clean_names()
+
 D21_charge <- D21_charge %>% 
   mutate_at(c("offense_start_date", "offense_end_date", "filing_date", "disposition_date"), mdy) %>% 
   # mutate_at(c("disposition_code"), factor) %>% 
@@ -226,11 +249,11 @@ D21_charge <- D21_charge %>%
   ) %>% 
   select(-c(referral_date, referral_charge_s, original_charge_s, warning, current_charge_s, description, enhancements))
 
-# write.csv(D21_charge, '../calculated_data/D21_charge.csv')
+write.csv(D21_charge, '../calculated_data/D21_charge.csv')
 summary(D21_charge)
 ```
 
-+ There are no missing records for `filing date` and `disposition date`
++ There are 8665 records where `disposition date` is empty
 + There are records where `filing date` is after the `disposition date`, need to confirm with David
 
 + Data Quality Issues
@@ -261,21 +284,22 @@ summary(D21_charge)
 D22_charge_def <- D22_charge_def %>% 
   mutate(
     code = if_else(str_detect(code, "[A-Z]"), code, str_pad(code, 5, "left", "0")),
-    charge_class = case_when(
-      class %in% c('A', 'B', 'C') ~ 2,                            # "Felony",
-      class %in% c('U', 'GM') ~ 1,                                # "Misdemeanour",
-      TRUE ~ 0                                                    # "Other"
-    ),
+    # charge_class = case_when(
+    #   class %in% c('A', 'B', 'C') ~ 2,                            # "Felony",
+    #   class %in% c('U', 'GM') ~ 1,                                # "Misdemeanour",
+    #   TRUE ~ 0                                                    # "Other"
+    # ),
     is_violent = if_else(violent == 1, 1, 0)                      # "Yes", "No/Maybe"
   ) %>% 
-  select(-c(class, violent)) %>% 
   # mutate_at(c("charge_class", "is_violent"), factor) %>% 
   mutate(
-    charge_class = factor(
-      charge_class, levels = c(0, 1, 2), ordered = TRUE                      # c("Other", "Misdemeanour", "Felony")
-    ),
-    is_violent = factor(is_violent, levels = c(0, 1), ordered = TRUE)        # c("No/Maybe", "Yes")
-  )
+    # charge_class = factor(
+    #   charge_class, levels = c(0, 1, 2), ordered = TRUE                      # c("Other", "Misdemeanour", "Felony")
+    # ),
+    is_violent = factor(is_violent, levels = c(0, 1), ordered = TRUE),        # c("No/Maybe", "Yes")
+    class = factor(class, levels = c('U', 'I', 'M', 'GM', 'C', 'B', 'A'), ordered = TRUE),
+  ) %>%
+  select(-c(violent))
 ```
 
 ## D23_dispo_key
@@ -302,6 +326,7 @@ D23_dispo_key <- D23_dispo_key %>%
 + Confirmed that "Display Sequence" is based on the order of offenses
 + Historical records classified based on age group and charge class
 + In-state v/s Out-of-state history identified
++ Three new columns are introduced -> `history_in_state`, `last_crime_period`, `total_crimes`
 
 ```{r}
 
@@ -310,9 +335,24 @@ D24_crime_hist <- D24_crime_hist %>%
     jurisdiction_state = str_extract(jursidiction, "\\b[A-Z]{2}"),
     age_group = if_else(startsWith(conviction_level, 'J'), "juvenile", "adult"),
     charge_class = if_else(endsWith(conviction_level, 'M'), "misdemeanour", "felony"),
-    history_in_state = jurisdiction_state == 'WA'
-  ) %>% 
-  select(-c(jurisdiction_state, conviction_level))
+    history_in_state = jurisdiction_state == 'WA',
+    last_crime = as.numeric((Sys.Date() - as.Date(offense_date)) / 365),
+    last_crime_period = cut(
+      last_crime, breaks = c(0, 3, 10, 110),
+      labels = c("<=3", "3-10", ">10")
+    )
+  ) %>%
+  group_by(defendant_id) %>%
+  mutate(total_crimes = length(defendant_id)) %>% 
+  select(-c(jurisdiction_state, conviction_level, last_crime)) %>%
+  ungroup()
+
+# criminal history sort by recent crime per file number
+crime_hist_by_file <- D24_crime_hist %>%
+                        group_by(defendant_id) %>% 
+                        arrange(last_crime_period) %>%
+                        slice(1) %>%
+                        ungroup()
 
 summary(D24_crime_hist)
 ```
@@ -321,44 +361,14 @@ summary(D24_crime_hist)
 + Max offense date is for year `9116`, which is not possible, so data is not good
 + Max Conviction date is for year `6200`, which is also not possible, data is not good
 
-
 ```{r}
+ggplot(D24_crime_hist, aes(x = last_crime_period)) + 
+  geom_bar() +
+geom_text(stat='count', aes(label=..count..), vjust=-0.7)
 
-# Calculate the criminal history in months of the defendants
-D24_crime_hist <- D24_crime_hist %>%  mutate(crime_hist_year = (Sys.Date() - as.Date(D24_crime_hist$offense_date)) / 365)
-
-# fill nas with 0
-D24_crime_hist$crime_hist_year[is.na(D24_crime_hist$crime_hist_year)] <- 0
-
-# convert new column in to numeric datatype
-D24_crime_hist$crime_hist_year <- as.numeric(as.character(D24_crime_hist$crime_hist_year))
-
-# str(D24_crime_hist)
-# draw histogram for the records
-hist(D24_crime_hist$crime_hist_year)
-
-summary(D24_crime_hist)
-
-# # to confirm that display sequence is simply order of offenses (highest value = most recent)
-# 
-# non_missing_defendants <- D24_crime_hist %>% 
-#   group_by(defendant_id) %>% 
-#   summarise(no_of_missing = sum(is.na(offense_date))) %>% 
-#   filter(no_of_missing == 0) %>% 
-#   select(defendant_id) %>% 
-#   pull()
-# 
-# xxx <- D24_crime_hist %>% 
-#   filter(defendant_id %in% non_missing_defendants) %>% 
-#   group_by(defendant_id) %>% 
-#   mutate(
-#     offense_date = ymd(offense_date),
-#     charge_order = desc(rank(offense_date))
-#   )
-# 
-# xxx %>% filter(display_sequence == charge_order)
-
+hist(D24_crime_hist$total_crimes)
 ```
+
 
 ## D31_custody_hist
 
@@ -409,8 +419,8 @@ D11_filed_cases <- D11_filed_cases %>%
   ) %>% 
   replace_na(list(gender = "Unknown"))
 
-D12_case_event <- D12_case_event %>% 
-  filter(!(is.na(event_docket_date) & event_code != "DEFFTA"))
+# D12_case_event <- D12_case_event %>% 
+#   filter(!(is.na(event_docket_date) & event_code != "DEFFTA"))
 
 D21_charge <- D21_charge %>% 
   filter(!(is.na(disposition_date) | is.na(disposition_code)))
@@ -424,14 +434,19 @@ Highlight all lines and hit Ctrl+C to uncomment
 Need to read in the CSV file to work with it for further EDA
 
 ```{r}
-events_with_missing_status <- events_with_missing_status %>% select(-c(X))
-events_with_missing_status <- events_with_missing_status %>%
-                        group_by(file_number, defendant_id, event_code, event_docket_corrected) %>% 
-                        arrange(defendant_id) %>%
-                        slice(1) %>%
-                        ungroup()
+# remove all the duplicates
+events_with_missing_def_status <- events_with_missing_def_status[!duplicated(events_with_missing_def_status), ]
 
+# keep only records where there is DEFFTA, and first event_enter_date of each file_number
+events_with_missing_def_status <- events_with_missing_def_status[events_with_missing_def_status$event_code == 'DEFFTA', ] %>%
+                        group_by(file_number) %>%
+                        arrange(file_number, event_enter_date) %>%
+                        slice(1) %>%
+                        ungroup() %>%
+                        select(-c(event_code, event_enter_date, event_docket_corrected))
 ```
+
+## Data Cleaning has been completed, now the analysis
 
 ## Capstone Meeting Updates - 10/22/2019
 
@@ -450,129 +465,174 @@ events_with_missing_status <- events_with_missing_status %>%
 + Order of precedence -> Charge Class, Seriousness, violent
 
 ```{r}
-# join D21_charge and D22_charge_def to get representative charge
-D21_D22_charges <- left_join(D21_charge, D22_charge_def, by = c("charge_code" = "code"))
+# join D21_charge and D22_charge_def to get charge class, seriousness and violent information for each file number
+represent_charge_by_file <- left_join(D21_charge, D22_charge_def, by = c("charge_code" = "code")) %>%
+                              select(-c(description))
 
 # arrange/sort records as File_number-ASC, Class-DESC, Seriousness-DESC, Violent-DESC
-D21_D22_charges <- arrange(D21_D22_charges, file_number, desc(charge_class), desc(seriousness), desc(is_violent))
-
-# Representative charge for each file number, fetch first record of each file number
-represent_charge <- D21_D22_charges[!duplicated(D21_D22_charges$file_number),] %>%
-                  select(-c(offense_start_date, offense_end_date, filing_date, disposition_date,
-                            disposition_code, charge_enhanced))
-
-# this representative charges is merged with D11, filed cases
-D11_cases_rep_charge <- merge(x = D11_filed_cases, y = represent_charge, by = "file_number", all.x=TRUE)
+represent_charge_by_file <- represent_charge_by_file %>%
+                              group_by(file_number) %>% 
+                              arrange(file_number, desc(class),
+                                    desc(seriousness), desc(is_violent)) %>%
+                              slice(1) %>%
+                              ungroup()  %>%
+                              select(-c(offense_start_date, offense_end_date, filing_date,
+                                        disposition_date, disposition_code, charge_enhanced))
 
 ```
 
 ##  Critical stage of a case is case setting  (Arraignment, case setting, before case setting, after case setting)
   
 ```{r}
-# '%ni%' <- Negate('%in%')
+# D12_case_events and D13_case_event_key to map the hearing codes to get 3 things, arraignment, case_setting, drug_court
+cs_1 <- left_join(D12_case_event, D13_case_event_key, by = c("event_code" = "hearing_code")) %>%
+                                select(-c(description))
 
-# D12_case_events and D13_case_event_key to map the hearing codes
-D12_D13_case_event_stages <- left_join(D12_case_event, D13_case_event_key, by = c("event_code" = "hearing_code"))
-
-# D12_D13 last arraignment date
-last_arraignment_date <- D12_D13_case_event_stages[D12_D13_case_event_stages$case_setting_stage == 'arraignment', ] %>%
-                        select(-c(defendant_id, event_code, defendant_event_status, description)) %>%
+# last arraignment date for each file number
+last_arr_date_by_file <- cs_1[cs_1$case_setting_stage == 'arraignment', ] %>%
+                        select(-c(defendant_id, event_code, event_enter_date, defendant_event_status)) %>%
                         group_by(file_number) %>% 
                         arrange(file_number, desc(event_docket_date)) %>%
                         slice(1) %>%
                         ungroup()
-colnames(last_arraignment_date)[colnames(last_arraignment_date) == 'event_docket_date'] <- 'last_arr_date'
-colnames(last_arraignment_date)[colnames(last_arraignment_date) == 'case_setting_stage'] <- 'arraignment'
 
-# D12_D13 first case setting date
-first_case_setting_date <- D12_D13_case_event_stages[D12_D13_case_event_stages$case_setting_stage == 'case_setting', ] %>%
-                        select(-c(defendant_id, event_code, defendant_event_status, description)) %>%
+colnames(last_arr_date_by_file)[colnames(last_arr_date_by_file) == 'event_docket_date'] <- 'last_arr_date'
+colnames(last_arr_date_by_file)[colnames(last_arr_date_by_file) == 'case_setting_stage'] <- 'arraignment'
+
+# first case setting date for each file number
+first_cs_date_by_file <- cs_1[cs_1$case_setting_stage == 'case_setting', ] %>%
+                        select(-c(defendant_id, event_code, event_enter_date, defendant_event_status)) %>%
                         group_by(file_number) %>% 
                         arrange(file_number, event_docket_date) %>%
                         slice(1) %>%
                         ungroup()
-colnames(first_case_setting_date)[colnames(first_case_setting_date) == 'event_docket_date'] <- 'first_cs_date'
-colnames(first_case_setting_date)[colnames(first_case_setting_date) == 'case_setting_stage'] <- 'case_setting'
 
-# join 3 dataframes to get last_arraignment_date and first_case_setting_date for each file number
-D12_D13_case_event_stages <- left_join(D12_D13_case_event_stages, last_arraignment_date, by = c("file_number"))
-D12_D13_case_event_stages <- left_join(D12_D13_case_event_stages, first_case_setting_date, by = c("file_number"))
+colnames(first_cs_date_by_file)[colnames(first_cs_date_by_file) == 'event_docket_date'] <- 'first_cs_date'
+colnames(first_cs_date_by_file)[colnames(first_cs_date_by_file) == 'case_setting_stage'] <- 'case_setting'
+
+# join 3 dataframes (cs_1, last_arr_date_by_file, first_cs_date_by_file) to get last_arraignment_date and first_case_setting_date for each file number
+cs_2 <- left_join(cs_1, last_arr_date_by_file, by = c("file_number")) %>%
+                                select(-c(arraignment))
+cs_2 <- left_join(cs_2, first_cs_date_by_file, by = c("file_number")) %>%
+                                select(-c(case_setting))
 
 # new column with 4 categories: A(Arraignment), B(Before Case Setting), C(Case Setting), D(After Case Setting)
-D12_D13_case_event_stages <-D12_D13_case_event_stages %>%  
-      mutate(case_stage = ifelse(event_docket_date <= last_arr_date, 'A(Arraignment)', 
-                                ifelse(event_docket_date > last_arr_date & event_docket_date < first_cs_date, 'B(Before Case Setting)',
-                                  ifelse(event_docket_date == first_cs_date, 'C(Case Setting)',
-                                        ifelse(event_docket_date > first_cs_date, 'D(After Case Setting)', event_code))))) %>%
-  select(-c(description, case_setting_stage, arraignment, case_setting))
+case_stage_by_file <- cs_2 %>%  
+      mutate(case_stage = ifelse(case_setting_stage == 'drug_court', 'Drug Court', 
+                            ifelse(event_docket_date <= last_arr_date , 'A(Arraignment)', 
+                              ifelse(event_docket_date > last_arr_date & event_docket_date < first_cs_date, 'B(Before Case Setting)',
+                                ifelse(event_docket_date == first_cs_date, 'C(Case Setting)',
+                                  ifelse(event_docket_date > first_cs_date, 'D(After Case Setting)', event_code)))))) %>%
+  select(-c(case_setting_stage))
 
-# arrange/sort records as File_number-ASC, Docket_date-ASC
-# D12_D13_case_event_stages <- arrange(D12_D13_case_event_stages, file_number, desc(event_docket_date))
+# filter only records where event_code is DEFFTA
+case_stage_by_file <- case_stage_by_file[case_stage_by_file$event_code == 'DEFFTA', ]
 
-# Convert age into categories as mentioned in Data dictionary
-# D12_D13_case_event_stages <-D12_D13_case_event_stages %>%  
-#                             mutate(case_stage = ifelse(case_setting_stage %ni% c('arraignment', 'case_setting'), '<19', 
-#                                           ifelse(age > 19 & age < 30, '20-29',
-#                                                 ifelse(age >= 30 & age < 40, '30-39',
-#                                                       ifelse(age >=40  & age < 50, '40-49',
-#                                                             ifelse(age >= 50 & age < 60, '50-59',
-#                                                                   ifelse(age >= 60, '>60',0))))))) %>%
-#                   select(c(file_number, defendant_id, dob_anon, gender, age_cate))
+# new column with 5 categories: A(Arraignment), B(Before Case Setting), C(Case Setting), D(After Case Setting), E(Drug court)
+case_stage_by_file <- case_stage_by_file %>%  
+      mutate(case_stage_dfa = ifelse((!is.na(last_arr_date) | (!is.na(last_arr_date) & is.na(first_cs_date))) & event_enter_date <= last_arr_date , 'A(Arraignment)', 
+                                ifelse((!is.na(first_cs_date) & !is.na(last_arr_date)) & (event_enter_date < first_cs_date & event_enter_date > last_arr_date), 'B(Before Case Setting)',
+                                  ifelse(!is.na(first_cs_date) & event_enter_date == first_cs_date, 'C(Case Setting)',
+                                    ifelse(!is.na(first_cs_date) & event_enter_date > first_cs_date, 'D(After Case Setting)', 
+                                      ifelse(is.na(first_cs_date) & is.na(last_arr_date), 'E(Drug court)',
+                                        ifelse((((is.na(last_arr_date) & !is.na(first_cs_date)) & event_enter_date < first_cs_date) | ((!is.na(last_arr_date) & is.na(first_cs_date)) & event_enter_date > last_arr_date)), 'B(Before Case Setting)', event_code)))))))
+
+# keeping only records which have these 5 values as above
+case_stage_by_file = filter(case_stage_by_file, (case_stage_dfa %in% c("A(Arraignment)", "B(Before Case Setting)", "C(Case Setting)", "D(After Case Setting)", "E(Drug court)")))
+
+# Earliest DEFFTA  at which stage for each file number
+case_stage_by_file <- case_stage_by_file[case_stage_by_file$event_code == 'DEFFTA', ] %>%
+                        group_by(file_number) %>%
+                        mutate(total_dfa = length(file_number)) %>%
+                        arrange(file_number, event_enter_date) %>%
+                        slice(1) %>%
+                        select(c(file_number, event_code, case_stage_dfa, total_dfa)) %>%
+                        ungroup()
+
+# Remove un-necessary datasets
+rm(cs_1, cs_2)
+
 ```
 
 
-## preparing dataset for EDA in powerBI
+## preparing dataset for DFA rate EDA in powerBI
 
 ```{r}
-# defendants ID's where DEFFTA exists
-def_dfa_codes <- D12_D13_case_event_stages[D12_D13_case_event_stages$event_code == 'DEFFTA', ] %>%
-                  select(defendant_id, event_code) %>%
-                  group_by(defendant_id) %>%
-                  slice(1) %>%
-                  ungroup()
+# We need DFA rates by 
+# Age-group, Gender, Venue           -- in D11_filed_cases dataset
+# charge class, seriousness, violent -- in represent_charge_by_file
+# Criminal History                   -- in D24_crime_hist / crime_hist_by_file
+# Critical stage of case             -- in case_stage_by_file
+# Custody Status                     -- events_with_missing_value
 
-colnames(def_dfa_codes) <- c("defendant_id", "dfa_event_code")
+# Age-group, Gender, Venue, charge class, seriousness, violent per file number
+dfa_by_category <- merge(x = D11_filed_cases, y = represent_charge_by_file, by = "file_number", all.x=TRUE) %>%
+                      select(-c(event_enter_date))
 
-# merge this "def_dfa_codes" with D12_D13_case_event_stages
-D12_D13_case_event_stages <- D12_D13_case_event_stages %>%
-        left_join(def_dfa_codes, by = c("defendant_id"))
-
-# merge "D12_D13_case_event_stages" leftjoin "D11_cases_rep_charge" to get age group, gender, venue, charge for each file number
-dfa_by_category <- D12_D13_case_event_stages %>%
-        left_join(D11_cases_rep_charge, by = c("file_number","defendant_id"))
-
-
-# merge "dfa_by_category" left join "D24_crime_hist" to get criminal history status
+# new column in "dfa_by_category" matching with "D24_crime_hist" to get criminal history status in Yes or No
 dfa_by_category$crime_hist <- ifelse(is.na(match(dfa_by_category$defendant_id, D24_crime_hist$defendant_id)),"No", "Yes")
 
-dfa_by_category$case_stage[is.na(dfa_by_category$case_stage)] <- "_"
-dfa_by_category$dfa_event_code[is.na(dfa_by_category$dfa_event_code)] <- ""
+# now for the files which have DFA atleast once with stage of the case -- case_stage_by_file
+dfa_by_category <- merge(x = dfa_by_category, y = case_stage_by_file, by = "file_number", all.x=TRUE)
 
-dfa_by_category$case_types[is.na(dfa_by_category$case_types)] <- "Other"
-
-dfa_by_category$age_group[is.na(dfa_by_category$age_group)] <- "Other"
-dfa_by_category$charge_code[is.na(dfa_by_category$charge_code)] <- "Other"
-dfa_by_category$description[is.na(dfa_by_category$description)] <- "Other"
-dfa_by_category$seriousness[is.na(dfa_by_category$seriousness)] <- 0
-dfa_by_category$charge_class[is.na(dfa_by_category$charge_class)] <- 0
-dfa_by_category$is_violent[is.na(dfa_by_category$is_violent)] <- 99
-
-# remove records where dfa_event_code is blank
-dfa_by_category <- dfa_by_category[dfa_by_category$dfa_event_code == 'DEFFTA', ]
+# adding custody status of the defendant as well
+dfa_by_category <- merge(x = dfa_by_category, y = events_with_missing_def_status, by = c("file_number", "defendant_id"), all.x=TRUE)
 
 # export dfa_by_category to csv for powerbi
 write.csv(dfa_by_category, '../calculated_data/dfa_by_category_eda.csv')
 
-# dfa_by_category for case stages -- keeping maximum case stage
-# D12_D13 first case setting date
-dfa_by_category_case_stage <- dfa_by_category %>%
-                        group_by(file_number) %>% 
-                        arrange(file_number, desc(case_stage)) %>%
-                        slice(1) %>%
-                        ungroup()
+
+
+
+# # defendants ID's where DEFFTA exists
+# def_dfa_codes <- D12_D13_case_event_stages[D12_D13_case_event_stages$event_code == 'DEFFTA', ] %>%
+#                   select(defendant_id, event_code) %>%
+#                   group_by(defendant_id) %>%
+#                   slice(1) %>%
+#                   ungroup()
+# 
+# colnames(def_dfa_codes) <- c("defendant_id", "dfa_event_code")
+# 
+# # merge this "def_dfa_codes" with D12_D13_case_event_stages
+# D12_D13_case_event_stages <- D12_D13_case_event_stages %>%
+#         left_join(def_dfa_codes, by = c("defendant_id"))
+# 
+# # merge "D12_D13_case_event_stages" leftjoin "D11_cases_rep_charge" to get age group, gender, venue, charge for each file number
+# dfa_by_category <- D12_D13_case_event_stages %>%
+#         left_join(D11_cases_rep_charge, by = c("file_number","defendant_id"))
+# 
+# 
+# # merge "dfa_by_category" left join "D24_crime_hist" to get criminal history status
+# dfa_by_category$crime_hist <- ifelse(is.na(match(dfa_by_category$defendant_id, D24_crime_hist$defendant_id)),"No", "Yes")
+# 
+# dfa_by_category$case_stage[is.na(dfa_by_category$case_stage)] <- "_"
+# dfa_by_category$dfa_event_code[is.na(dfa_by_category$dfa_event_code)] <- ""
+# 
+# dfa_by_category$case_types[is.na(dfa_by_category$case_types)] <- "Other"
+# 
+# dfa_by_category$age_group[is.na(dfa_by_category$age_group)] <- "Other"
+# dfa_by_category$charge_code[is.na(dfa_by_category$charge_code)] <- "Other"
+# dfa_by_category$description[is.na(dfa_by_category$description)] <- "Other"
+# dfa_by_category$seriousness[is.na(dfa_by_category$seriousness)] <- 0
+# dfa_by_category$charge_class[is.na(dfa_by_category$charge_class)] <- 0
+# dfa_by_category$is_violent[is.na(dfa_by_category$is_violent)] <- 99
+# 
+# # remove records where dfa_event_code is blank
+# dfa_by_category <- dfa_by_category[dfa_by_category$dfa_event_code == 'DEFFTA', ]
+# 
+# # export dfa_by_category to csv for powerbi
+# # write.csv(dfa_by_category, '../calculated_data/dfa_by_category_eda.csv')
+# 
+# # dfa_by_category for case stages -- keeping maximum case stage
+# # D12_D13 first case setting date
+# dfa_by_category_case_stage <- dfa_by_category %>%
+#                         group_by(file_number) %>% 
+#                         arrange(file_number, desc(case_stage)) %>%
+#                         slice(1) %>%
+#                         ungroup()
 
 # export dfa_by_category to csv for powerbi
-write.csv(dfa_by_category_case_stage, '../calculated_data/dfa_by_category_case_stage_eda.csv')
+# write.csv(dfa_by_category_case_stage, '../calculated_data/dfa_by_category_case_stage_eda.csv')
 
 # test <- left_join( 
 #   D12_D13_case_event_stages, D31_custody_hist,
@@ -580,125 +640,496 @@ write.csv(dfa_by_category_case_stage, '../calculated_data/dfa_by_category_case_s
 
 ```
 
-![D13](3.png)
+![DFA_1](dfa_1.png)
 
-![D13](4.png)
+![DFA_2](dfa_2.png)
 
 + disposition time
 
 ```{r}
-dispo_time <- D21_D22_charges %>%
-              group_by(file_number) %>% 
-              arrange(file_number, desc(disposition_date)) %>%
-              slice(1) %>%
-              ungroup() %>%
-              select(file_number, filing_date, disposition_date)
-
-dispo_time <- D12_D13_case_event_stages %>%
-              left_join(dispo_time, by = c("file_number")) %>%
-              select(file_number, last_arr_date, case_stage, filing_date, disposition_date) %>%
-              mutate(time_for_dispo_filing = as.Date(disposition_date) - as.Date(filing_date)) %>%
-              mutate(time_for_dispo_arraign = as.Date(disposition_date) - as.Date(last_arr_date))
-
-dispo_time <- dispo_time %>%
-              group_by(file_number) %>% 
-              arrange(file_number, desc(case_stage), desc(filing_date), desc(disposition_date)) %>%
-              slice(1) %>%
-              ungroup()
-
-# export dispo_time to csv for powerbi
-write.csv(dispo_time, '../calculated_data/dispo_time_eda.csv')
+# megre D21_charges table with last_arr_date_by_file to get last arraignement date for each file number
+# new columns : (i)   total_dispo_date   -> how many disposition date one file number has
+#               (ii)  dispo_time_filing  -> time to disposition comparing filing date
+#               (iii) dispo_time_arraign -> time to disposition comparing last arraignement date of file
+file_last_arr <- merge(x = D21_charge, y = last_arr_date_by_file, by = "file_number", all.x=TRUE) %>%
+                        group_by(file_number) %>%
+                          mutate(total_dispo_date = length(unique(disposition_date))) %>%
+                        ungroup() %>%
+                          mutate(dispo_time_filing  = as.Date(disposition_date) - as.Date(filing_date)) %>%
+                          mutate(dispo_time_arraign = as.Date(disposition_date) - as.Date(last_arr_date)) %>%
+                            select(-c(arraignment, offense_start_date, offense_end_date))
 
 # convert new column in to numeric datatype
-dispo_time$time_for_dispo_filing <- as.numeric(as.character(dispo_time$time_for_dispo_filing))
-dispo_time$time_for_dispo_arraign <- as.numeric(as.character(dispo_time$time_for_dispo_arraign))
+file_last_arr$dispo_time_filing  <- as.numeric(as.character(file_last_arr$dispo_time_filing))
+file_last_arr$dispo_time_arraign <- as.numeric(as.character(file_last_arr$dispo_time_arraign))
 
-hist(dispo_time$time_for_dispo_filing)
-hist(dispo_time$time_for_dispo_arraign)
-```
-+ Time is in days
+# histogram for count of disposition date
+hist(file_last_arr$total_dispo_date)
 
-### Time to disposition
+# histogram for time to disposition comparing filing date
+hist(file_last_arr$dispo_time_filing, col="orange", 
+     xlim=c(-500,1500), breaks=280)
 
-Time to disposition for a case is measured in "days" and is the difference between the earliest filing date and the latest disposition date.
+# histogram for time to disposition comparing last arraignement date of file
+hist(file_last_arr$dispo_time_arraign, col="orange",
+     xlim=c(-500,1500), breaks=280)
 
-```{r}
-
-time_to_disposition <- D21_charge %>% 
-  group_by(file_number) %>% 
-  mutate(
-    earliest_filing_date = min(filing_date),
-    latest_disposition_date = max(disposition_date),
-    time_to_disposition_days = difftime(
-      earliest_filing_date, latest_disposition_date, "days"
-    )
-  ) %>% 
-  select(-c("earliest_filing_date", "latest_disposition_date"))
-
-```
-
-### Finding the representative charge:
-
-+ Representative charge: Sort charges based on class, seriousness and violent and rank in ascending order
-+ Charge codes ranked in alphabetical order in case of tie
-+ Duplicate charge codes are eliminated by filtering out instances of charge codes after the first instance
-
-```{r}
-
-# # confirmed that all defendant id's are present in both file case and case event records
-# setdiff(unique(D11_filed_cases$defendant_id), unique(D12_case_event$defendant_id))
-
-# to find the representative charge
-
-charge_code_unique <- D22_charge_def %>% 
-  arrange(desc(charge_class), desc(seriousness), desc(is_violent), code) %>% 
-  mutate(charge_rank = 1:n()) %>% 
-  group_by(code) %>% 
-  arrange(desc(charge_rank)) %>% 
-  mutate(charge_code_instance = 1:n()) %>% 
-  filter(charge_code_instance == 1) %>% 
-  select(-charge_code_instance)
-
-rep_charge <- D21_charge %>% 
-  left_join(charge_code_unique, by = c("charge_code" = "code")) %>% 
-  group_by(file_number) %>% 
-  select(file_number, charge_code, charge_rank) %>% 
-  filter(!is.na(charge_code)) %>% 
-  mutate(max_charge_rank = min(charge_rank)) %>% 
-  filter(charge_rank == max_charge_rank) %>% 
-  select(file_number, charge_code) %>% 
-  unique()
-
-```
-
-### Case Setting Stages
-
-```{r}
-
-last_arraignment <- D12_case_event %>% 
-  filter(event_code == "HRARRSC") %>% 
-  group_by(file_number) %>% 
-  summarise(arraignment_date = max(event_docket_date))
-
-first_case_setting <- D12_case_event %>% 
-  filter(event_code %in% c("HRCSGP", "HRCSNWK", "HRCSNWS", "HRCSWK", "HRCSWS")) %>% 
-  group_by(file_number) %>% 
-  summarise(case_setting_date = min(event_docket_date))
+# rm(file_last_arr)
 
 ```
 
 ```{r}
-D12_case_event %>%  
-  mutate(
-    event_group = fct_collapse(
-      event_code,
-      arraignment = c("HRARRSC"),
-      case_setting = c("HRCSGP", "HRCSNWK", "HRCSNWS", "HRCSWK", "HRCSWS"), 
-      group_other = TRUE
-    )
-  ) %>% 
-  group_by(event_group) %>% 
-  summarise(no_of_cases = n_distinct(file_number)) %>% 
-  arrange(desc(no_of_cases))
+# merge file_last_arr with D23_dispo_key to get disposition ranking
+dispo_time_dispo_rank <- merge(x = file_last_arr, y = D23_dispo_key, by = "disposition_code", all.x=TRUE) %>%
+                            group_by(file_number, charge_code) %>% 
+                            arrange(file_number, ranking) %>%
+                            slice(1) %>%
+                            ungroup() %>% 
+                          select(c(file_number, filing_date, disposition_date, charge_enhanced, charge_code, last_arr_date, 
+                                   total_dispo_date, dispo_time_filing, dispo_time_arraign, disposition_code, ranking, type))
+
+rm(file_last_arr)
+
+# for each file number in dispo_time_dispo_rank dataframe, get from dfa_by_category df
+# Age-group, Gender, Venue           
+# charge class, seriousness, violent 
+# Criminal History                   
+# Custody Status
+dispo_by_category <- merge(x = dispo_time_dispo_rank, y = dfa_by_category, by = "file_number", all.x=TRUE) %>%  
+      mutate(serious_cat = ifelse(seriousness <= 5, '<=5', 
+                            ifelse(seriousness > 5 & seriousness <= 10, '5-10', 
+                              ifelse(seriousness > 5, '>10', seriousness))))  %>%
+                         select(-c(filing_date, disposition_date, last_arr_date, case_types, charge_code.y,
+                                   event_code, case_stage_dfa, seriousness))
 ```
+
+
++ Drug Court Cases
+
+```{r}
+dg_1 <- left_join(D12_case_event, D13_case_event_key, by = c("event_code" = "hearing_code")) %>%
+                                select(-c(description))
+
+# delete records which are not drug cases
+dg_1 <- dg_1[(dg_1$case_setting_stage == "drug_court"), ]
+
+#
+# new column in "dispo_by_category" matching with "dg_1" to get criminal history status in Yes or No
+dispo_by_category$drug_court <- ifelse(is.na(match(dispo_by_category$file_number, dg_1$file_number)),"No", "Yes")
+
+rm(dg_1)
+
+```
+
++ Filing date - Histogram and Basic stats
+
+```{r}
+# disposition time comparing filing date for age group
+ggplot(dispo_by_category,aes(x=dispo_time_filing)) +
+  geom_histogram()  + 
+    xlim(c(-200,1200)) + facet_grid(~age_group) + ggtitle("for age group")
+
+# age group
+summaryBy(dispo_time_filing ~ age_group, data = dispo_by_category, 
+          FUN = list(mean, max, min, median))
+#-----------------------------------------------------
+
+# disposition time comparing filing date for gender
+ggplot(dispo_by_category,aes(x=dispo_time_filing)) +
+  geom_histogram()  + 
+    xlim(c(-200,1200)) + facet_grid(~gender) + ggtitle("for gender")
+
+# gender
+summaryBy(dispo_time_filing ~ gender, data = dispo_by_category, 
+          FUN = list(mean, max, min, median))
+#-----------------------------------------------------
+
+# disposition time comparing filing date for Criminal History
+ggplot(dispo_by_category,aes(x=dispo_time_filing)) +
+  geom_histogram()  + 
+    xlim(c(-200,1200)) + facet_grid(~crime_hist) + ggtitle("Criminal History")
+
+# crime_hist
+summaryBy(dispo_time_filing ~ crime_hist, data = dispo_by_category, 
+          FUN = list(mean, max, min, median))
+#-----------------------------------------------------
+
+# disposition time comparing filing date for venue
+ggplot(dispo_by_category,aes(x=dispo_time_filing)) +
+  geom_histogram()  + 
+    xlim(c(-200,1200)) + facet_grid(~venue) + ggtitle("for venue")
+
+# venue
+summaryBy(dispo_time_filing ~ venue, data = dispo_by_category, 
+          FUN = list(mean, max, min, median))
+#-----------------------------------------------------
+
+# disposition time comparing filing date for Charge class
+ggplot(dispo_by_category,aes(x=dispo_time_filing)) +
+  geom_histogram()  + 
+    xlim(c(-200,1200)) + facet_grid(~class) + ggtitle("Charge class")
+
+# class
+summaryBy(dispo_time_filing ~ class, data = dispo_by_category, 
+          FUN = list(mean, max, min, median))
+#-----------------------------------------------------
+
+# disposition time comparing filing date for Seriousness
+ggplot(dispo_by_category,aes(x=dispo_time_filing)) +
+  geom_histogram()  + 
+    xlim(c(-200,1200)) + facet_grid(~serious_cat) + ggtitle("Seriousness")
+
+# serious_cat
+summaryBy(dispo_time_filing ~ serious_cat, data = dispo_by_category, 
+          FUN = list(mean, max, min, median))
+#-----------------------------------------------------
+
+# disposition time comparing filing date for Custody Status
+ggplot(dispo_by_category,aes(x=dispo_time_filing)) +
+  geom_histogram()  + 
+    xlim(c(-200,1200)) + facet_grid(~defendant_status) + ggtitle("Custody Status")
+
+# defendant_status
+summaryBy(dispo_time_filing ~ defendant_status, data = dispo_by_category, 
+          FUN = list(mean, max, min, median))
+#-----------------------------------------------------
+
+# disposition time comparing filing date for Drug Cases
+ggplot(dispo_by_category,aes(x=dispo_time_filing)) +
+  geom_histogram()  + 
+    xlim(c(-200,1200)) + facet_grid(~drug_court) + ggtitle("Drug Cases")
+
+# drug_court
+summaryBy(dispo_time_filing ~ drug_court, data = dispo_by_category, 
+          FUN = list(mean, max, min, median))
+#-----------------------------------------------------
+```
+
++ last Arraignment date - Histogram and Basic stats
+
+```{r}
+# disposition time comparing last arraignment date for age group
+ggplot(dispo_by_category,aes(x=dispo_time_arraign)) +
+  geom_histogram()  + 
+    xlim(c(-200,1200)) + facet_grid(~age_group) + ggtitle("for age group")
+
+# age group
+summaryBy(dispo_time_arraign ~ age_group, data = dispo_by_category, 
+          FUN = list(mean, max, min, median))
+#-----------------------------------------------------
+
+# disposition time comparing last arraignment date for gender
+ggplot(dispo_by_category,aes(x=dispo_time_arraign)) +
+  geom_histogram()  + 
+    xlim(c(-200,1200)) + facet_grid(~gender) + ggtitle("for gender")
+
+# gender
+summaryBy(dispo_time_arraign ~ gender, data = dispo_by_category, 
+          FUN = list(mean, max, min, median))
+#-----------------------------------------------------
+
+# disposition time comparing last arraignment date for Criminal History
+ggplot(dispo_by_category,aes(x=dispo_time_arraign)) +
+  geom_histogram()  + 
+    xlim(c(-200,1200)) + facet_grid(~crime_hist) + ggtitle("Criminal History")
+
+# crime_hist
+summaryBy(dispo_time_arraign ~ crime_hist, data = dispo_by_category, 
+          FUN = list(mean, max, min, median))
+#-----------------------------------------------------
+
+# disposition time comparing last arraignment date for venue
+ggplot(dispo_by_category,aes(x=dispo_time_arraign)) +
+  geom_histogram()  + 
+    xlim(c(-200,1200)) + facet_grid(~venue) + ggtitle("for venue")
+
+# venue
+summaryBy(dispo_time_arraign ~ venue, data = dispo_by_category, 
+          FUN = list(mean, max, min, median))
+#-----------------------------------------------------
+
+# disposition time comparing last arraignment date for Charge class
+ggplot(dispo_by_category,aes(x=dispo_time_arraign)) +
+  geom_histogram()  + 
+    xlim(c(-200,1200)) + facet_grid(~class) + ggtitle("Charge class")
+
+# class
+summaryBy(dispo_time_arraign ~ class, data = dispo_by_category, 
+          FUN = list(mean, max, min, median))
+#-----------------------------------------------------
+
+# disposition time comparing last arraignment date for Seriousness
+ggplot(dispo_by_category,aes(x=dispo_time_arraign)) +
+  geom_histogram()  + 
+    xlim(c(-200,1200)) + facet_grid(~serious_cat) + ggtitle("Seriousness")
+
+# serious_cat
+summaryBy(dispo_time_arraign ~ serious_cat, data = dispo_by_category, 
+          FUN = list(mean, max, min, median))
+#-----------------------------------------------------
+
+# disposition time comparing last arraignment date for Custody Status
+ggplot(dispo_by_category,aes(x=dispo_time_arraign)) +
+  geom_histogram()  + 
+    xlim(c(-200,1200)) + facet_grid(~defendant_status) + ggtitle("Custody Status")
+
+# defendant_status
+summaryBy(dispo_time_arraign ~ defendant_status, data = dispo_by_category, 
+          FUN = list(mean, max, min, median))
+#-----------------------------------------------------
+
+# disposition time comparing last arraignment date for Drug Cases
+ggplot(dispo_by_category,aes(x=dispo_time_arraign)) +
+  geom_histogram()  + 
+    xlim(c(-200,1200)) + facet_grid(~drug_court) + ggtitle("Drug Cases")
+
+# drug_court
+summaryBy(dispo_time_arraign ~ drug_court, data = dispo_by_category, 
+          FUN = list(mean, max, min, median))
+#-----------------------------------------------------
+```
+
+```{r}
+ggplot(dispo_by_category, aes(x=total_dfa, y=dispo_time_filing)) +
+  geom_bar(stat = "summary", fun.y = "mean") +
+  facet_grid(~age_group)
+
+
+```
+
+
+
+
+
+<!-- ```{r} -->
+<!-- dispo_time <- D21_D22_charges %>% -->
+<!--               group_by(file_number) %>%  -->
+<!--               arrange(file_number, desc(disposition_date)) %>% -->
+<!--               slice(1) %>% -->
+<!--               ungroup() %>% -->
+<!--               select(file_number, filing_date, disposition_date) -->
+
+<!-- dispo_time <- D12_D13_case_event_stages %>% -->
+<!--               left_join(dispo_time, by = c("file_number")) %>% -->
+<!--               select(file_number, last_arr_date, case_stage, filing_date, disposition_date) %>% -->
+<!--               mutate(time_for_dispo_filing = as.Date(disposition_date) - as.Date(filing_date)) %>% -->
+<!--               mutate(time_for_dispo_arraign = as.Date(disposition_date) - as.Date(last_arr_date)) -->
+
+<!-- dispo_time <- dispo_time %>% -->
+<!--               group_by(file_number) %>%  -->
+<!--               arrange(file_number, desc(case_stage), desc(filing_date), desc(disposition_date)) %>% -->
+<!--               slice(1) %>% -->
+<!--               ungroup() -->
+
+<!-- summary(dispo_time) -->
+
+<!-- # export dispo_time to csv for powerbi -->
+<!-- # write.csv(dispo_time, '../calculated_data/dispo_time_eda.csv') -->
+
+<!-- # convert new column in to numeric datatype -->
+<!-- dispo_time$time_for_dispo_filing <- as.numeric(as.character(dispo_time$time_for_dispo_filing)) -->
+<!-- dispo_time$time_for_dispo_arraign <- as.numeric(as.character(dispo_time$time_for_dispo_arraign)) -->
+
+<!-- hist(dispo_time$time_for_dispo_filing) -->
+<!-- hist(dispo_time$time_for_dispo_arraign) -->
+<!-- ``` -->
+<!-- + Time is in days -->
+
+<!-- ```{r} -->
+<!-- # merge this "dispo_time" with D11_filed_cases to get demographic info of file numbers -->
+<!-- dispo_time_with_cases <- D11_filed_cases %>% -->
+<!--         left_join(dispo_time, by = c("file_number")) -->
+
+<!-- ``` -->
+
+<!-- ### Time for disposition vs Gender -->
+
+<!-- ```{r} -->
+<!-- # scatter plot for dispo time comparing with filing date -->
+<!-- ggplot(dispo_time_with_cases, aes(x=gender, y=time_for_dispo_filing)) +  -->
+<!--   geom_point() -->
+
+<!-- summary(dispo_time_with_cases[dispo_time_with_cases$gender == "Male",]) -->
+<!-- summary(dispo_time_with_cases[dispo_time_with_cases$gender == "Female",]) -->
+
+<!-- # scatter plot for dispo time comparing with arraignment date -->
+<!-- ggplot(dispo_time_with_cases, aes(x=gender, y=time_for_dispo_arraign)) +  -->
+<!--   geom_point() -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- summary(dispo_time_with_cases[dispo_time_with_cases$gender == "Male",]) -->
+<!-- summary(dispo_time_with_cases[dispo_time_with_cases$gender == "Female",]) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- summary(dispo_time_with_charges[dispo_time_with_charges$seriousness >= 10,]) -->
+<!-- summary(dispo_time_with_charges[dispo_time_with_charges$seriousness < 5,]) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- summary(dispo_time_with_charges[dispo_time_with_charges$class >= 10,]) -->
+<!-- summary(dispo_time_with_charges[dispo_time_with_charges$seriousness < 5,]) -->
+<!-- ``` -->
+
+<!-- ### Time for disposition vs Age group -->
+
+<!-- ```{r} -->
+<!-- # scatter plot for dispo time comparing with filing date -->
+<!-- ggplot(dispo_time_with_cases, aes(x=age_group, y=time_for_dispo_filing)) +  -->
+<!--   geom_point() -->
+
+<!-- # scatter plot for dispo time comparing with arraignment date -->
+<!-- ggplot(dispo_time_with_cases, aes(x=age_group, y=time_for_dispo_arraign)) +  -->
+<!--   geom_point() -->
+<!-- ``` -->
+
+<!-- ### Time for disposition vs Venue -->
+
+<!-- ```{r} -->
+<!-- # scatter plot for dispo time comparing with filing date -->
+<!-- ggplot(dispo_time_with_cases, aes(x=venue, y=time_for_dispo_filing)) +  -->
+<!--   geom_point() -->
+
+<!-- # scatter plot for dispo time comparing with arraignment date -->
+<!-- ggplot(dispo_time_with_cases, aes(x=venue, y=time_for_dispo_arraign)) +  -->
+<!--   geom_point() -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- # merge this "dispo_time" with D11_filed_cases to get demographic info of file numbers -->
+<!-- dispo_time_with_charges <- D21_D22_charges %>% -->
+<!--         left_join(dispo_time, by = c("file_number")) -->
+
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- summary(dispo_time_with_charges[dispo_time_with_charges$class == 'A',]) -->
+<!-- summary(dispo_time_with_charges[dispo_time_with_charges$class == 'B',]) -->
+<!-- summary(dispo_time_with_charges[dispo_time_with_charges$class == 'C',]) -->
+<!-- ``` -->
+
+<!-- ### Time for disposition vs Charge class -->
+
+<!-- ```{r} -->
+<!-- # scatter plot for dispo time comparing with filing date -->
+<!-- ggplot(dispo_time_with_charges, aes(x=charge_class, y=time_for_dispo_filing)) +  -->
+<!--   geom_point() -->
+
+<!-- # scatter plot for dispo time comparing with arraignment date -->
+<!-- ggplot(dispo_time_with_charges, aes(x=charge_class, y=time_for_dispo_arraign)) +  -->
+<!--   geom_point() -->
+
+<!-- ``` -->
+
+<!-- ### Time for disposition vs Seriousness -->
+
+<!-- ```{r} -->
+<!-- # scatter plot for dispo time comparing with filing date -->
+<!-- ggplot(dispo_time_with_charges, aes(x=seriousness, y=time_for_dispo_filing)) +  -->
+<!--   geom_point() -->
+
+<!-- # scatter plot for dispo time comparing with arraignment date -->
+<!-- ggplot(dispo_time_with_charges, aes(x=seriousness, y=time_for_dispo_arraign)) +  -->
+<!--   geom_point() -->
+
+<!-- ``` -->
+
+<!-- ### Time for disposition vs Violent -->
+
+<!-- ```{r} -->
+<!-- # scatter plot for dispo time comparing with filing date -->
+<!-- ggplot(dispo_time_with_charges, aes(x=is_violent, y=time_for_dispo_filing)) +  -->
+<!--   geom_point() -->
+
+<!-- # scatter plot for dispo time comparing with arraignment date -->
+<!-- ggplot(dispo_time_with_charges, aes(x=is_violent, y=time_for_dispo_arraign)) +  -->
+<!--   geom_point() -->
+
+<!-- ``` -->
+
+
+<!-- ### Time to disposition -->
+
+<!-- Time to disposition for a case is measured in "days" and is the difference between the earliest filing date and the latest disposition date. -->
+
+<!-- ```{r} -->
+
+<!-- time_to_disposition <- D21_charge %>%  -->
+<!--   group_by(file_number) %>%  -->
+<!--   mutate( -->
+<!--     earliest_filing_date = min(filing_date), -->
+<!--     latest_disposition_date = max(disposition_date), -->
+<!--     time_to_disposition_days = difftime( -->
+<!--       earliest_filing_date, latest_disposition_date, "days" -->
+<!--     ) -->
+<!--   ) %>%  -->
+<!--   select(-c("earliest_filing_date", "latest_disposition_date")) -->
+
+<!-- ``` -->
+
+<!-- ### Finding the representative charge: -->
+
+<!-- + Representative charge: Sort charges based on class, seriousness and violent and rank in ascending order -->
+<!-- + Charge codes ranked in alphabetical order in case of tie -->
+<!-- + Duplicate charge codes are eliminated by filtering out instances of charge codes after the first instance -->
+
+<!-- ```{r} -->
+
+<!-- # # confirmed that all defendant id's are present in both file case and case event records -->
+<!-- # setdiff(unique(D11_filed_cases$defendant_id), unique(D12_case_event$defendant_id)) -->
+
+<!-- # to find the representative charge -->
+
+<!-- charge_code_unique <- D22_charge_def %>%  -->
+<!--   arrange(desc(charge_class), desc(seriousness), desc(is_violent), code) %>%  -->
+<!--   mutate(charge_rank = 1:n()) %>%  -->
+<!--   group_by(code) %>%  -->
+<!--   arrange(desc(charge_rank)) %>%  -->
+<!--   mutate(charge_code_instance = 1:n()) %>%  -->
+<!--   filter(charge_code_instance == 1) %>%  -->
+<!--   select(-charge_code_instance) -->
+
+<!-- rep_charge <- D21_charge %>%  -->
+<!--   left_join(charge_code_unique, by = c("charge_code" = "code")) %>%  -->
+<!--   group_by(file_number) %>%  -->
+<!--   select(file_number, charge_code, charge_rank) %>%  -->
+<!--   filter(!is.na(charge_code)) %>%  -->
+<!--   mutate(max_charge_rank = min(charge_rank)) %>%  -->
+<!--   filter(charge_rank == max_charge_rank) %>%  -->
+<!--   select(file_number, charge_code) %>%  -->
+<!--   unique() -->
+
+<!-- ``` -->
+
+<!-- ### Case Setting Stages -->
+
+<!-- ```{r} -->
+
+<!-- last_arraignment <- D12_case_event %>%  -->
+<!--   filter(event_code == "HRARRSC") %>%  -->
+<!--   group_by(file_number) %>%  -->
+<!--   summarise(arraignment_date = max(event_docket_date)) -->
+
+<!-- first_case_setting <- D12_case_event %>%  -->
+<!--   filter(event_code %in% c("HRCSGP", "HRCSNWK", "HRCSNWS", "HRCSWK", "HRCSWS")) %>%  -->
+<!--   group_by(file_number) %>%  -->
+<!--   summarise(case_setting_date = min(event_docket_date)) -->
+
+<!-- ``` -->
+
+<!-- # ```{r} -->
+<!-- # D12_case_event %>%   -->
+<!-- #   mutate( -->
+<!-- #     event_group = fct_collapse( -->
+<!-- #       event_code, -->
+<!-- #       arraignment = c("HRARRSC"), -->
+<!-- #       case_setting = c("HRCSGP", "HRCSNWK", "HRCSNWS", "HRCSWK", "HRCSWS"),  -->
+<!-- #       group_other = TRUE -->
+<!-- #     ) -->
+<!-- #   ) %>%  -->
+<!-- #   group_by(event_group) %>%  -->
+<!-- #   summarise(no_of_cases = n_distinct(file_number)) %>%  -->
+<!-- #   arrange(desc(no_of_cases)) -->
+<!-- # ``` -->
 
