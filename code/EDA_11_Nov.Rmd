@@ -140,7 +140,7 @@ D11_filed_cases <- D11_filed_cases %>%
   select(-c(dob_anon, referral_date, event_code, police_agency, age, anon_le_number))
 
 replace_na(list(gender = "Unknown"))
-write.csv(D11_filed_cases, '../calculated_data/D11_filed_cases.csv')  # for Basic Stat : PowerBI Visuals, Snapshot included below
+# write.csv(D11_filed_cases, '../calculated_data/D11_filed_cases.csv')  # for Basic Stat : PowerBI Visuals, Snapshot included below
 
 hist(D11_filed_cases$event_enter_date, breaks = seq(min(D11_filed_cases$event_enter_date), max(D11_filed_cases$event_enter_date), length.out = 30))
 
@@ -175,7 +175,7 @@ D12_case_event <- D12_case_event %>%
 
 summary(D12_case_event)
 
-write.csv(D12_case_event, '../calculated_data/D12_case_event.csv')
+# write.csv(D12_case_event, '../calculated_data/D12_case_event.csv')
 ```
 
 ![D12](2.png)
@@ -249,7 +249,7 @@ D21_charge <- D21_charge %>%
   ) %>% 
   select(-c(referral_date, referral_charge_s, original_charge_s, warning, current_charge_s, description, enhancements))
 
-write.csv(D21_charge, '../calculated_data/D21_charge.csv')
+# write.csv(D21_charge, '../calculated_data/D21_charge.csv')
 summary(D21_charge)
 ```
 
@@ -518,7 +518,7 @@ cs_2 <- left_join(cs_2, first_cs_date_by_file, by = c("file_number")) %>%
 
 # new column with 4 categories: A(Arraignment), B(Before Case Setting), C(Case Setting), D(After Case Setting)
 case_stage_by_file <- cs_2 %>%  
-      mutate(case_stage = ifelse(case_setting_stage == 'drug_court', 'Drug Court', 
+      mutate(case_stage = ifelse(case_setting_stage == 'drug_court', 'E(Drug court)', 
                             ifelse(event_docket_date <= last_arr_date , 'A(Arraignment)', 
                               ifelse(event_docket_date > last_arr_date & event_docket_date < first_cs_date, 'B(Before Case Setting)',
                                 ifelse(event_docket_date == first_cs_date, 'C(Case Setting)',
@@ -526,31 +526,39 @@ case_stage_by_file <- cs_2 %>%
   select(-c(case_setting_stage))
 
 # filter only records where event_code is DEFFTA
-case_stage_by_file <- case_stage_by_file[case_stage_by_file$event_code == 'DEFFTA', ]
+dfa_file_cases <- case_stage_by_file[case_stage_by_file$event_code == 'DEFFTA', ]
 
 # new column with 5 categories: A(Arraignment), B(Before Case Setting), C(Case Setting), D(After Case Setting), E(Drug court)
 case_stage_by_file <- case_stage_by_file %>%  
-      mutate(case_stage_dfa = ifelse((!is.na(last_arr_date) | (!is.na(last_arr_date) & is.na(first_cs_date))) & event_enter_date <= last_arr_date , 'A(Arraignment)', 
+      mutate(case_stage_dfa =ifelse(is.na(case_stage), (ifelse((!is.na(last_arr_date) | (!is.na(last_arr_date) & is.na(first_cs_date))) & event_enter_date <= last_arr_date , 'A(Arraignment)', 
                                 ifelse((!is.na(first_cs_date) & !is.na(last_arr_date)) & (event_enter_date < first_cs_date & event_enter_date > last_arr_date), 'B(Before Case Setting)',
                                   ifelse(!is.na(first_cs_date) & event_enter_date == first_cs_date, 'C(Case Setting)',
                                     ifelse(!is.na(first_cs_date) & event_enter_date > first_cs_date, 'D(After Case Setting)', 
                                       ifelse(is.na(first_cs_date) & is.na(last_arr_date), 'E(Drug court)',
-                                        ifelse((((is.na(last_arr_date) & !is.na(first_cs_date)) & event_enter_date < first_cs_date) | ((!is.na(last_arr_date) & is.na(first_cs_date)) & event_enter_date > last_arr_date)), 'B(Before Case Setting)', event_code)))))))
+                                        ifelse((((is.na(last_arr_date) & !is.na(first_cs_date)) & event_enter_date < first_cs_date) | ((!is.na(last_arr_date) & is.na(first_cs_date)) & event_enter_date > last_arr_date)), 'B(Before Case Setting)', case_stage))))))), case_stage))
 
 # keeping only records which have these 5 values as above
 case_stage_by_file = filter(case_stage_by_file, (case_stage_dfa %in% c("A(Arraignment)", "B(Before Case Setting)", "C(Case Setting)", "D(After Case Setting)", "E(Drug court)")))
 
+# total DFA by file
+# case_stage_by_file <- case_stage_by_file %>%
+#                         group_by(file_number) %>%
+#                         summarise(total_dfa = sum(event_code == "DEFFTA")) 
+
 # Earliest DEFFTA  at which stage for each file number
-case_stage_by_file <- case_stage_by_file[case_stage_by_file$event_code == 'DEFFTA', ] %>%
-                        group_by(file_number) %>%
-                        mutate(total_dfa = length(file_number)) %>%
+case_stage_by_file <- case_stage_by_file %>%
+                        group_by(file_number) %>%  
+                        mutate(total_dfa = length(which(event_code == "DEFFTA"))) %>%
                         arrange(file_number, event_enter_date) %>%
                         slice(1) %>%
-                        select(c(file_number, event_code, case_stage_dfa, total_dfa)) %>%
+                        select(c(file_number, case_stage_dfa, total_dfa)) %>%
                         ungroup()
 
+# new column in "case_stage_by_file" matching with "dfa_file_cases" to check if filed case is DEFFTA
+case_stage_by_file$event_code <- ifelse(is.na(match(case_stage_by_file$file_number, dfa_file_cases$file_number)),"Other", "DEFFTA")
+
 # Remove un-necessary datasets
-rm(cs_1, cs_2)
+rm(cs_1, cs_2, dfa_file_cases)
 
 ```
 
@@ -640,12 +648,15 @@ write.csv(dfa_by_category, '../calculated_data/dfa_by_category_eda.csv')
 
 ```
 
+# DFA Rate by Category
+
 ![DFA_1](dfa_1.png)
 
 ![DFA_2](dfa_2.png)
 
-+ disposition time
+# Disposition time
 
+## Data Preparation
 ```{r}
 # megre D21_charges table with last_arr_date_by_file to get last arraignement date for each file number
 # new columns : (i)   total_dispo_date   -> how many disposition date one file number has
@@ -704,7 +715,7 @@ dispo_by_category <- merge(x = dispo_time_dispo_rank, y = dfa_by_category, by = 
 ```
 
 
-+ Drug Court Cases
+## Drug Court Cases
 
 ```{r}
 dg_1 <- left_join(D12_case_event, D13_case_event_key, by = c("event_code" = "hearing_code")) %>%
@@ -721,7 +732,7 @@ rm(dg_1)
 
 ```
 
-+ Filing date - Histogram and Basic stats
+## Filing date - Histogram and Basic stats
 
 ```{r}
 # disposition time comparing filing date for age group
@@ -805,7 +816,7 @@ summaryBy(dispo_time_filing ~ drug_court, data = dispo_by_category,
 #-----------------------------------------------------
 ```
 
-+ last Arraignment date - Histogram and Basic stats
+## last Arraignment date - Histogram and Basic stats
 
 ```{r}
 # disposition time comparing last arraignment date for age group
@@ -815,7 +826,7 @@ ggplot(dispo_by_category,aes(x=dispo_time_arraign)) +
 
 # age group
 summaryBy(dispo_time_arraign ~ age_group, data = dispo_by_category, 
-          FUN = list(mean, max, min, median))
+          FUN = list(mean, max, min, median), na.rm=TRUE)
 #-----------------------------------------------------
 
 # disposition time comparing last arraignment date for gender
@@ -825,7 +836,7 @@ ggplot(dispo_by_category,aes(x=dispo_time_arraign)) +
 
 # gender
 summaryBy(dispo_time_arraign ~ gender, data = dispo_by_category, 
-          FUN = list(mean, max, min, median))
+          FUN = list(mean, max, min, median), na.rm=TRUE)
 #-----------------------------------------------------
 
 # disposition time comparing last arraignment date for Criminal History
@@ -835,7 +846,7 @@ ggplot(dispo_by_category,aes(x=dispo_time_arraign)) +
 
 # crime_hist
 summaryBy(dispo_time_arraign ~ crime_hist, data = dispo_by_category, 
-          FUN = list(mean, max, min, median))
+          FUN = list(mean, max, min, median), na.rm=TRUE)
 #-----------------------------------------------------
 
 # disposition time comparing last arraignment date for venue
@@ -845,7 +856,7 @@ ggplot(dispo_by_category,aes(x=dispo_time_arraign)) +
 
 # venue
 summaryBy(dispo_time_arraign ~ venue, data = dispo_by_category, 
-          FUN = list(mean, max, min, median))
+          FUN = list(mean, max, min, median), na.rm=TRUE)
 #-----------------------------------------------------
 
 # disposition time comparing last arraignment date for Charge class
@@ -855,7 +866,7 @@ ggplot(dispo_by_category,aes(x=dispo_time_arraign)) +
 
 # class
 summaryBy(dispo_time_arraign ~ class, data = dispo_by_category, 
-          FUN = list(mean, max, min, median))
+          FUN = list(mean, max, min, median), na.rm=TRUE)
 #-----------------------------------------------------
 
 # disposition time comparing last arraignment date for Seriousness
@@ -865,7 +876,7 @@ ggplot(dispo_by_category,aes(x=dispo_time_arraign)) +
 
 # serious_cat
 summaryBy(dispo_time_arraign ~ serious_cat, data = dispo_by_category, 
-          FUN = list(mean, max, min, median))
+          FUN = list(mean, max, min, median), na.rm=TRUE)
 #-----------------------------------------------------
 
 # disposition time comparing last arraignment date for Custody Status
@@ -875,7 +886,7 @@ ggplot(dispo_by_category,aes(x=dispo_time_arraign)) +
 
 # defendant_status
 summaryBy(dispo_time_arraign ~ defendant_status, data = dispo_by_category, 
-          FUN = list(mean, max, min, median))
+          FUN = list(mean, max, min, median), na.rm=TRUE)
 #-----------------------------------------------------
 
 # disposition time comparing last arraignment date for Drug Cases
@@ -885,20 +896,80 @@ ggplot(dispo_by_category,aes(x=dispo_time_arraign)) +
 
 # drug_court
 summaryBy(dispo_time_arraign ~ drug_court, data = dispo_by_category, 
-          FUN = list(mean, max, min, median))
+          FUN = list(mean, max, min, median), na.rm=TRUE)
 #-----------------------------------------------------
 ```
 
+# Relation b/w DFA and Disposition time
+
 ```{r}
+ggplot(dispo_by_category[dispo_by_category$age_group != "Unknown", ], aes(x=total_dfa, y=dispo_time_filing)) +
+  geom_point(stat = "summary", fun.y = "mean") +
+  facet_grid(~age_group)  + ggtitle("for age group")
+
 ggplot(dispo_by_category, aes(x=total_dfa, y=dispo_time_filing)) +
-  geom_bar(stat = "summary", fun.y = "mean") +
-  facet_grid(~age_group)
+  geom_point(stat = "summary", fun.y = "mean") +
+  facet_grid(~gender) + ggtitle("for gender")
 
+ggplot(dispo_by_category, aes(x=total_dfa, y=dispo_time_filing)) +
+  geom_point(stat = "summary", fun.y = "mean") +
+  facet_grid(~crime_hist) + ggtitle("Criminal History")
 
+ggplot(dispo_by_category, aes(x=total_dfa, y=dispo_time_filing)) +
+  geom_point(stat = "summary", fun.y = "mean") +
+  facet_grid(~venue) + ggtitle("for venue")
+
+ggplot(dispo_by_category, aes(x=total_dfa, y=dispo_time_filing)) +
+  geom_point(stat = "summary", fun.y = "mean") +
+  facet_grid(~class) + ggtitle("Charge class")
+
+ggplot(dispo_by_category, aes(x=total_dfa, y=dispo_time_filing)) +
+  geom_point(stat = "summary", fun.y = "mean") +
+  facet_grid(~serious_cat) + ggtitle("Seriousness")
+
+ggplot(dispo_by_category, aes(x=total_dfa, y=dispo_time_filing)) +
+  geom_point(stat = "summary", fun.y = "mean") +
+  facet_grid(~defendant_status) + ggtitle("Custody Status")
+
+ggplot(dispo_by_category, aes(x=total_dfa, y=dispo_time_filing)) +
+  geom_point(stat = "summary", fun.y = "mean") +
+  facet_grid(~drug_court) + ggtitle("Drug Cases")
 ```
 
 
+```{r}
+ggplot(dispo_by_category[dispo_by_category$age_group != "Unknown", ], aes(x=total_dfa, y=dispo_time_arraign)) +
+  geom_point(stat = "summary", fun.y = "mean") +
+  facet_grid(~age_group)  + ggtitle("for age group")
 
+ggplot(dispo_by_category, aes(x=total_dfa, y=dispo_time_arraign)) +
+  geom_point(stat = "summary", fun.y = "mean") +
+  facet_grid(~gender) + ggtitle("for gender")
+
+ggplot(dispo_by_category, aes(x=total_dfa, y=dispo_time_arraign)) +
+  geom_point(stat = "summary", fun.y = "mean") +
+  facet_grid(~crime_hist) + ggtitle("Criminal History")
+
+ggplot(dispo_by_category, aes(x=total_dfa, y=dispo_time_arraign)) +
+  geom_point(stat = "summary", fun.y = "mean") +
+  facet_grid(~venue) + ggtitle("for venue")
+
+ggplot(dispo_by_category, aes(x=total_dfa, y=dispo_time_arraign)) +
+  geom_point(stat = "summary", fun.y = "mean") +
+  facet_grid(~class) + ggtitle("Charge class")
+
+ggplot(dispo_by_category, aes(x=total_dfa, y=dispo_time_arraign)) +
+  geom_point(stat = "summary", fun.y = "mean") +
+  facet_grid(~serious_cat) + ggtitle("Seriousness")
+
+ggplot(dispo_by_category, aes(x=total_dfa, y=dispo_time_arraign)) +
+  geom_point(stat = "summary", fun.y = "mean") +
+  facet_grid(~defendant_status) + ggtitle("Custody Status")
+
+ggplot(dispo_by_category, aes(x=total_dfa, y=dispo_time_arraign)) +
+  geom_point(stat = "summary", fun.y = "mean") +
+  facet_grid(~drug_court) + ggtitle("Drug Cases")
+```
 
 
 <!-- ```{r} -->
