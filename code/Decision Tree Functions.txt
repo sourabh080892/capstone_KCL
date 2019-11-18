@@ -1,0 +1,71 @@
+import os as os
+
+import numpy as np
+import pandas as pd
+
+import statsmodels.api as sm
+
+from sklearn import metrics
+from sklearn import tree
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
+
+import pydotplus
+from IPython.display import Image
+import graphviz
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+import warnings
+warnings.filterwarnings("ignore", category = FutureWarning)
+
+def logitDataPrep(y, X, drop_ref_levels = True):
+    """
+    Encodes categorical variables and add intercept
+    Returns: y and X data frames
+    """
+    encodeCols = list(X.dtypes[X.dtypes == "object"].index)
+    X = pd.get_dummies(X, columns = encodeCols, drop_first = drop_ref_levels)
+    X = X.astype(float)
+    X["intercept"] = 1.0
+    return y, X
+
+def splitData(y, X, test_set_proportion = 0.20):
+    """
+    Splits the data into train and test sets
+    Keeps only the selected features in the train and test sets
+    Returns: y and X data frames split, containing selected columns
+    """
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = test_set_proportion, random_state = 109) 
+    return X_train, X_test, y_train, y_test
+
+def CreateDecTree(input_max_depth, input_min_samples_leaf, input_min_samples_split, input_file_name, X_train, X_test, y_train, y_test):
+    
+    """
+    Build and evaluate the decision tree
+    """
+    
+    # create the decision tree
+    clf = tree.DecisionTreeClassifier(class_weight = None, criterion = 'gini', max_depth = input_max_depth, max_features = None, max_leaf_nodes = None, min_samples_leaf = input_min_samples_leaf, min_samples_split = input_min_samples_split, min_weight_fraction_leaf = 0.0, presort = False, random_state = 109, splitter = 'best')
+    clf = clf.fit(X_train, y_train)
+    
+    # make predictions and evaluate the decision tree
+    y_pred = clf.predict(X_test)
+    y_pred_proba = clf.predict_proba(X_test)[::, 1]
+    [fpr, tpr, thresholds] = metrics.roc_curve(y_test, y_pred_proba)
+    print(metrics.confusion_matrix(y_test, y_pred))
+    print("Accuracy:", round(metrics.accuracy_score(y_test, y_pred), 4))
+    print("Recall:", round(metrics.recall_score(y_test, y_pred), 4))
+    print("Precision:", round(metrics.precision_score(y_test, y_pred), 4))
+    print("Area Under Curve:", round(metrics.auc(fpr, tpr), 4))
+    print("Log Loss:", round(metrics.log_loss(y_test, y_pred_proba), 4))
+    
+    # export estimated tree into dot graphic file
+    dot_data = tree.export_graphviz(clf, out_file = None, feature_names = X.columns)
+    
+    # create image file with the decision tree
+    graph = pydotplus.graph_from_dot_data(dot_data)
+    Image(graph.create_png())
+    return graph.write_png(os.path.join(os.getcwd(), "results", "figures", input_file_name))
+
+CreateDecTree(input_max_depth, input_min_samples_leaf, input_min_samples_split, input_file_name, X_train, X_test, y_train, y_test)

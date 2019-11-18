@@ -1,0 +1,330 @@
+---
+title: "BUAN 5510 - Capstone Project - Linear Regression"
+author: "Keith Castelino and Sourabh Gupta"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    theme: united
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(
+	fig.width = 8.5,
+	# include = FALSE,
+	# echo = FALSE,
+	message = FALSE,
+	warning = FALSE
+)
+
+options(tibble.print_max = 40, tibble.print_min = 25)
+
+library(tidyverse)
+library(here)
+library(broom)
+library(caTools)
+library(MLmetrics)
+
+```
+
+# Read in the Data
+
+Read in the dataset.
+
+```{r}
+
+dispo_by_category <- read_csv(here::here("data", "processed", "dispo_by_category.csv"))
+represent_charge_by_file <- read_csv(here::here("data", "processed", "represent_charge_by_file.csv"))
+case_competency_hearing <- read_csv(here::here("data", "processed", "case_competency_hearing.csv"))
+
+base_data <- dispo_by_category %>% 
+  left_join(
+    represent_charge_by_file %>% inner_join(
+      case_competency_hearing, by = c("file_number" = "file_number")
+    ),
+    by = c("file_number" = "file_number")
+  ) %>% 
+  replace_na(list(class.x = "Other", serious_cat = "Other", defendant_status = "Other", seriousness = 0)) %>% 
+  mutate(
+    is_rep_charge = if_else(charge_code.x == charge_code | is.na(charge_code.x), 1, 0),
+    class_a = if_else(class.x == "A", 1, 0),
+    is_felony = if_else(class.x %in% c("A", "B", "C"), 1, 0)
+  ) %>% 
+  filter(
+    !is.na(dispo_time_arraign),
+    age_group != "Unknown",
+    gender != "Unknown",
+    class.x %in% c("M", "A", "B", "C", "GM"),
+    defendant_status %in% c("IN", "OUT", "Other"),
+    between(dispo_time_filing, 0, 5 * 365),
+    between(dispo_time_arraign, 0, 5 * 365)
+  ) %>% 
+  mutate_at(c("age_group", "gender", "crime_hist", "class.x", "serious_cat", "defendant_status", "drug_court"), factor) %>% 
+  select(
+    dispo_time_arraign, dispo_time_filing, is_rep_charge, age_group, gender, crime_hist, 
+    class.x, class_a, is_felony, serious_cat, seriousness, defendant_status, total_dfa, drug_court, is_competency_hearing
+  ) %>% 
+  rename(charge_class = class.x)
+
+base_data$age_group <- relevel(base_data$age_group, "<=18")
+base_data$gender <- relevel(base_data$gender, "Female")
+base_data$crime_hist <- relevel(base_data$crime_hist, "No")
+base_data$charge_class <- relevel(base_data$charge_class, "M")
+base_data$defendant_status <- relevel(base_data$defendant_status, "IN")
+
+```
+
+Split into test and train sets
+
+```{r}
+set.seed(101)
+sample <- sample.split(base_data$dispo_time_filing, SplitRatio = 0.80 * nrow(base_data))
+train <- subset(base_data, sample == TRUE)
+test <- subset(base_data, sample == FALSE)
+```
+
+# Model Selection
+
+We will be choosing our final model based on the following variables that we have found may have a numerical relationship with disposition time, per our exploratory analysis results.
+
++ age group
++ gender
++ criminal history
++ charge class
+    + OR whether it is a class A charge or not
+    + OR whether it is a felony charge or not
++ seriousness
+    + either based on the seriousness classification OR based on the actual seriousness value assessed by the court
++ defendant custody status
++ representative charge
++ number of DFAs
++ case type: whether the case goes to drug court or not
++ case event: whether there was a competency hearing or not
+
+There may be possible interactions between the following pairs of variables:
+
++ number of DFAs AND charge class
++ age group AND drug case
+
+## Model Selection - based on arraignment date
+
+### Model 1
+
+This model is our base model and includes the following variables
+
++ age_group 
++ gender 
++ crime_hist (whether there is previous criminal history)
++ charge_class
++ seriousness (based on category)
++ defendant_status (custody status)
++ total_dfa (no of times defendant failed to appear)
++ drug_court (whether the case went to drug court)
++ is_competency_hearing (whether there was a competency hearing or not)
+
+```{r}
+
+model_1 <- lm(
+  data = train,
+  formula = dispo_time_filing ~ 
+    age_group + gender + crime_hist + charge_class + serious_cat + defendant_status + total_dfa + drug_court + is_competency_hearing
+)
+summary(model_1)
+result_1 <- tidy(model_1)
+
+y_pred_1 <- predict.lm(model_1, test)
+y_true_1 <- test$dispo_time_filing
+
+paste("MAE - Mean Absolute Error:", round(MLmetrics::MAE(y_pred_1, y_true_1), 4))
+paste("MSE - Mean Squared Error:", round(MLmetrics::MSE(y_pred_1, y_true_1), 4))
+
+```
+
+### Model 2
+
+Replace the original charge class with an identifier based on whether they were Class A charges (for most serious crimes) or not
+
+```{r}
+
+model_2 <- lm(
+  data = train,
+  formula = dispo_time_filing ~ 
+    age_group + gender + crime_hist + class_a + serious_cat + defendant_status + total_dfa + drug_court + is_competency_hearing
+)
+summary(model_2)
+result_2 <- tidy(model_2)
+
+y_pred_2 <- predict.lm(model_2, test)
+y_true_2 <- test$dispo_time_filing
+
+paste("MAE - Mean Absolute Error:", round(MLmetrics::MAE(y_pred_2, y_true_2), 4))
+paste("MSE - Mean Squared Error:", round(MLmetrics::MSE(y_pred_2, y_true_2), 4))
+
+```
+
+### Model 3
+
+We replace seriousness categorical measurement with original seriousness value
+
+```{r}
+
+model_3 <- lm(
+  data = train,
+  formula = dispo_time_filing ~ 
+    age_group + gender + crime_hist + class_a + seriousness + defendant_status + total_dfa + drug_court + is_competency_hearing
+)
+summary(model_3)
+result_3 <- tidy(model_3)
+
+y_pred_3 <- predict.lm(model_3, test)
+y_true_3 <- test$dispo_time_filing
+
+paste("MAE - Mean Absolute Error:", round(MLmetrics::MAE(y_pred_3, y_true_3), 4))
+paste("MSE - Mean Squared Error:", round(MLmetrics::MSE(y_pred_3, y_true_3), 4))
+
+```
+
+### Model 4
+
+We include interaction variables:
+
++ number of DFAs AND charge class
++ age group AND drug case
+
+```{r}
+
+model_4 <- lm(
+  data = train,
+  formula = dispo_time_filing ~ 
+    gender + crime_hist + serious_cat + total_dfa + is_competency_hearing + defendant_status * class_a + age_group * drug_court
+)
+summary(model_4)
+result_4 <- tidy(model_4)
+
+y_pred_4 <- predict.lm(model_4, test)
+y_true_4 <- test$dispo_time_filing
+
+paste("MAE - Mean Absolute Error:", round(MLmetrics::MAE(y_pred_4, y_true_4), 4))
+paste("MSE - Mean Squared Error:", round(MLmetrics::MSE(y_pred_4, y_true_4), 4))
+
+```
+
+### Conclusions
+
++ Model with the lowest MAE or MAPE: Model 1
+    + All other models have similar levels of MAE or MAPE
++ R-squared is also highest for Model 1
+    + All other models have similar levels of R-squared
++ 
+
+## Model Selection - based on filing date
+
+### Model 1
+
+This model is our base model and includes the following variables
+
++ age_group 
++ gender 
++ crime_hist (whether there is previous criminal history)
++ charge_class
++ seriousness (based on category)
++ defendant_status (custody status)
++ total_dfa (no of times defendant failed to appear)
++ drug_court (whether the case went to drug court)
++ is_competency_hearing (whether there was a competency hearing or not)
+
+```{r}
+
+model_a_1 <- lm(
+  data = train,
+  formula = dispo_time_arraign ~ 
+    age_group + gender + crime_hist + charge_class + serious_cat + defendant_status + total_dfa + drug_court + is_competency_hearing
+)
+summary(model_a_1)
+result_a_1 <- tidy(model_a_1)
+
+y_pred_a_1 <- predict.lm(model_a_1, test)
+y_true_a_1 <- test$dispo_time_arraign
+
+paste("MAE - Mean Absolute Error:", round(MLmetrics::MAE(y_pred_a_1, y_true_a_1), 4))
+paste("MSE - Mean Squared Error:", round(MLmetrics::MSE(y_pred_a_1, y_true_a_1), 4))
+
+```
+
+### Model 2
+
+Replace the original charge class with an identifier based on whether they were Class A charges (for most serious crimes) or not
+
+```{r}
+
+model_a_2 <- lm(
+  data = train,
+  formula = dispo_time_arraign ~ 
+    age_group + gender + crime_hist + class_a + serious_cat + defendant_status + total_dfa + drug_court + is_competency_hearing
+)
+summary(model_a_2)
+result_a_2 <- tidy(model_a_2)
+
+y_pred_a_2 <- predict.lm(model_a_2, test)
+y_true_a_2 <- test$dispo_time_arraign
+
+paste("MAE - Mean Absolute Error:", round(MLmetrics::MAE(y_pred_a_2, y_true_a_2), 4))
+paste("MSE - Mean Squared Error:", round(MLmetrics::MSE(y_pred_a_2, y_true_a_2), 4))
+
+```
+
+### Model 3
+
+We replace seriousness categorical measurement with original seriousness value
+
+```{r}
+
+model_a_3 <- lm(
+  data = train,
+  formula = dispo_time_arraign ~ 
+    age_group + gender + crime_hist + class_a + seriousness + defendant_status + total_dfa + drug_court + is_competency_hearing
+)
+summary(model_a_3)
+result_a_3 <- tidy(model_a_3)
+
+y_pred_a_3 <- predict.lm(model_a_3, test)
+y_true_a_3 <- test$dispo_time_arraign
+
+paste("MAE - Mean Absolute Error:", round(MLmetrics::MAE(y_pred_a_3, y_true_a_3), 4))
+paste("MSE - Mean Squared Error:", round(MLmetrics::MSE(y_pred_a_3, y_true_a_3), 4))
+
+```
+
+### Model 4
+
+We include interaction variables:
+
++ number of DFAs AND charge class
++ age group AND drug case
+
+```{r}
+
+model_a_4 <- lm(
+  data = train,
+  formula = dispo_time_arraign ~ 
+    gender + crime_hist + serious_cat + total_dfa + is_competency_hearing + defendant_status * class_a + age_group * drug_court
+)
+summary(model_a_4)
+result_a_4 <- tidy(model_a_4)
+
+y_pred_a_4 <- predict.lm(model_a_4, test)
+y_true_a_4 <- test$dispo_time_arraign
+
+paste("MAE - Mean Absolute Error:", round(MLmetrics::MAE(y_pred_a_4, y_true_a_4), 4))
+paste("MSE - Mean Squared Error:", round(MLmetrics::MSE(y_pred_a_4, y_true_a_4), 4))
+
+```
+
+### Conclusions
+
++ Model 1 has the lowest MAE and MAPE and has the highest R-squared
+
