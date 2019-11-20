@@ -131,11 +131,11 @@ D11_filed_cases <- D11_filed_cases %>%
     dob_anon = ymd(dob_anon),
     event_enter_date = mdy(event_enter_date),
     age = interval(dob_anon, event_enter_date) %/% years(1),
-    # age_group = cut(
-    #   age, breaks = c(0, 18, 30, 40, 50, 60, 80),
-    #   labels = c("LE_18", "20-30", "30-40", "40-50", "50-60", "GE_60"),
-    #   order = TRUE
-    # ),
+    age_group = cut(
+      age, breaks = c(0, 18, 30, 40, 50, 60, 80),
+      labels = c("LE_18", "20-30", "30-40", "40-50", "50-60", "GE_60"),
+      order = TRUE
+    ),
     venue = fct_collapse(venue, Other = c("DCS", "DCW", "JUV"))
   ) %>% 
   mutate_at(c("gender", "venue", "case_types"), factor) %>% 
@@ -416,8 +416,8 @@ The data is further trimmed based on the following:
 D11_filed_cases <- D11_filed_cases %>%
   mutate(
     # case_types = fct_lump(case_types, prop = 0.01),
-    case_types = fct_explicit_na(case_types, na_level = "Unknown")
-    # age_group = fct_explicit_na(age_group, na_level = "Unknown")
+    case_types = fct_explicit_na(case_types, na_level = "Unknown"),
+    age_group = fct_explicit_na(age_group, na_level = "Unknown")
   ) %>% 
   replace_na(list(gender = "Unknown"))
 
