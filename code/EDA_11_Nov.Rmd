@@ -131,14 +131,15 @@ D11_filed_cases <- D11_filed_cases %>%
     dob_anon = ymd(dob_anon),
     event_enter_date = mdy(event_enter_date),
     age = interval(dob_anon, event_enter_date) %/% years(1),
-    age_group = cut(
-      age, breaks = c(0, 18, 30, 40, 50, 60, 80),
-      labels = c("<=18", "20-30", "30-40", "40-50", "50-60", ">=60")
-    ),
+    # age_group = cut(
+    #   age, breaks = c(0, 18, 30, 40, 50, 60, 80),
+    #   labels = c("LE_18", "20-30", "30-40", "40-50", "50-60", "GE_60"),
+    #   order = TRUE
+    # ),
     venue = fct_collapse(venue, Other = c("DCS", "DCW", "JUV"))
   ) %>% 
   mutate_at(c("gender", "venue", "case_types"), factor) %>% 
-  select(-c(dob_anon, referral_date, event_code, police_agency, age, anon_le_number))
+  select(-c(dob_anon, referral_date, event_code, police_agency, anon_le_number))
 
 replace_na(list(gender = "Unknown"))
 # write.csv(D11_filed_cases, '../calculated_data/D11_filed_cases.csv')  # for Basic Stat : PowerBI Visuals, Snapshot included below
@@ -415,8 +416,8 @@ The data is further trimmed based on the following:
 D11_filed_cases <- D11_filed_cases %>%
   mutate(
     # case_types = fct_lump(case_types, prop = 0.01),
-    case_types = fct_explicit_na(case_types, na_level = "Unknown"),
-    age_group = fct_explicit_na(age_group, na_level = "Unknown")
+    case_types = fct_explicit_na(case_types, na_level = "Unknown")
+    # age_group = fct_explicit_na(age_group, na_level = "Unknown")
   ) %>% 
   replace_na(list(gender = "Unknown"))
 
@@ -555,8 +556,8 @@ case_stage_by_file <- case_stage_by_file %>%
                         select(c(file_number, case_stage_dfa, total_dfa)) %>%
                         ungroup()
 
-# new column in "case_stage_by_file" matching with "dfa_file_cases" to check if filed case is DEFFTA
-case_stage_by_file$event_code <- ifelse(is.na(match(case_stage_by_file$file_number, dfa_file_cases$file_number)),"Other", "DEFFTA")
+# new column in "case_stage_by_file" matching with "dfa_file_cases" to check if filed case has DEFFTA
+case_stage_by_file$dfa <- ifelse(is.na(match(case_stage_by_file$file_number, dfa_file_cases$file_number)),"No", "Yes")
 
 # Remove un-necessary datasets
 rm(cs_1, cs_2, dfa_file_cases)
@@ -574,6 +575,8 @@ rm(cs_1, cs_2, dfa_file_cases)
 # Critical stage of case             -- in case_stage_by_file
 # Custody Status                     -- events_with_missing_value
 
+rm(dfa_by_category, dfa_for_model)
+
 # Age-group, Gender, Venue, charge class, seriousness, violent per file number
 dfa_by_category <- merge(x = D11_filed_cases, y = represent_charge_by_file, by = "file_number", all.x=TRUE) %>%
                       select(-c(event_enter_date))
@@ -588,64 +591,63 @@ dfa_by_category <- merge(x = dfa_by_category, y = case_stage_by_file, by = "file
 dfa_by_category <- merge(x = dfa_by_category, y = events_with_missing_def_status, by = c("file_number", "defendant_id"), all.x=TRUE)
 
 # export dfa_by_category to csv for powerbi
-write.csv(dfa_by_category, '../calculated_data/dfa_by_category_eda.csv')
+# ###### write.csv(dfa_by_category, '../calculated_data/dfa_by_category_eda.csv')
+
+# summary(dfa_by_category)
+# summary(D11_filed_cases)
+```
+
+```{r}
+
+dfa_for_model <- dfa_by_category %>%
+                      select(-c(case_types, charge_code, file_number, defendant_id))
+
+# 1. delete records where gender is "Unknown"
+dfa_for_model <- dfa_for_model[!(dfa_for_model$gender=="Unknown"),]
+# 2. FIll nas in age with mean of the column
+# dfa_for_model <- dfa_for_model[, age := na.aggregate(age)]
+
+# fill missing of seriousness
+class_serious <- D22_charge_def %>%
+                  group_by(class) %>%
+                  dplyr::summarize(Mean = mean(seriousness, na.rm=TRUE))
+
+class_serious <- class_serious[!is.na(class_serious$class),]
+
+dfa_for_model$seriousness[is.na(dfa_for_model$seriousness)] <- class_serious$Mean[match(dfa_for_model$class, class_serious$class)][which(is.na(dfa_for_model$seriousness))]
+
+rm(class_serious)
 
 
+mean(my.xldataset$mcs1, na.rm=TRUE)
+
+dfa_for_model$class <- ifelse(is.na(dfa_for_model$class), 'Other', dfa_for_model$class)
+dfa_for_model$class <- as.factor(dfa_for_model$class)
+
+dfa_for_model$seriousness <- ifelse(is.na(dfa_for_model$seriousness), 99, dfa_for_model$seriousness)
+dfa_for_model$seriousness <- as.factor(dfa_for_model$seriousness)
+
+dfa_for_model$is_violent <- ifelse(is.na(dfa_for_model$is_violent), 0, dfa_for_model$is_violent)
+
+dfa_for_model$defendant_status <- ifelse(is.na(dfa_for_model$defendant_status), 'Other', dfa_for_model$defendant_status)
+dfa_for_model$defendant_status <- as.numeric(as.factor(dfa_for_model$defendant_status))
+
+dfa_for_model$gender      <- as.numeric(dfa_for_model$gender)
+dfa_for_model$venue       <- as.numeric(dfa_for_model$venue)
+# dfa_for_model$age_group   <- as.numeric(dfa_for_model$age_group)
+dfa_for_model$class       <- as.numeric(dfa_for_model$class)
+dfa_for_model$is_violent  <- as.numeric(dfa_for_model$is_violent)
+dfa_for_model$case_stage_dfa   <- as.numeric(as.factor(dfa_for_model$case_stage_dfa))
+
+# dfa_for_model$dfa <- ifelse(dfa_for_model$dfa == 'Yes', 1, 0)
+dfa_for_model$crime_hist <- ifelse(dfa_for_model$crime_hist == 'Yes', 1, 0)
 
 
-# # defendants ID's where DEFFTA exists
-# def_dfa_codes <- D12_D13_case_event_stages[D12_D13_case_event_stages$event_code == 'DEFFTA', ] %>%
-#                   select(defendant_id, event_code) %>%
-#                   group_by(defendant_id) %>%
-#                   slice(1) %>%
-#                   ungroup()
-# 
-# colnames(def_dfa_codes) <- c("defendant_id", "dfa_event_code")
-# 
-# # merge this "def_dfa_codes" with D12_D13_case_event_stages
-# D12_D13_case_event_stages <- D12_D13_case_event_stages %>%
-#         left_join(def_dfa_codes, by = c("defendant_id"))
-# 
-# # merge "D12_D13_case_event_stages" leftjoin "D11_cases_rep_charge" to get age group, gender, venue, charge for each file number
-# dfa_by_category <- D12_D13_case_event_stages %>%
-#         left_join(D11_cases_rep_charge, by = c("file_number","defendant_id"))
-# 
-# 
-# # merge "dfa_by_category" left join "D24_crime_hist" to get criminal history status
-# dfa_by_category$crime_hist <- ifelse(is.na(match(dfa_by_category$defendant_id, D24_crime_hist$defendant_id)),"No", "Yes")
-# 
-# dfa_by_category$case_stage[is.na(dfa_by_category$case_stage)] <- "_"
-# dfa_by_category$dfa_event_code[is.na(dfa_by_category$dfa_event_code)] <- ""
-# 
-# dfa_by_category$case_types[is.na(dfa_by_category$case_types)] <- "Other"
-# 
-# dfa_by_category$age_group[is.na(dfa_by_category$age_group)] <- "Other"
-# dfa_by_category$charge_code[is.na(dfa_by_category$charge_code)] <- "Other"
-# dfa_by_category$description[is.na(dfa_by_category$description)] <- "Other"
-# dfa_by_category$seriousness[is.na(dfa_by_category$seriousness)] <- 0
-# dfa_by_category$charge_class[is.na(dfa_by_category$charge_class)] <- 0
-# dfa_by_category$is_violent[is.na(dfa_by_category$is_violent)] <- 99
-# 
-# # remove records where dfa_event_code is blank
-# dfa_by_category <- dfa_by_category[dfa_by_category$dfa_event_code == 'DEFFTA', ]
-# 
-# # export dfa_by_category to csv for powerbi
-# # write.csv(dfa_by_category, '../calculated_data/dfa_by_category_eda.csv')
-# 
-# # dfa_by_category for case stages -- keeping maximum case stage
-# # D12_D13 first case setting date
-# dfa_by_category_case_stage <- dfa_by_category %>%
-#                         group_by(file_number) %>% 
-#                         arrange(file_number, desc(case_stage)) %>%
-#                         slice(1) %>%
-#                         ungroup()
+str(dfa_for_model)
+summary(dfa_for_model)
 
 # export dfa_by_category to csv for powerbi
-# write.csv(dfa_by_category_case_stage, '../calculated_data/dfa_by_category_case_stage_eda.csv')
-
-# test <- left_join( 
-#   D12_D13_case_event_stages, D31_custody_hist,
-#   by = ('defendant_id' = 'defendant_id'), rolling = event_docket_date < status_history_date)
+write.csv(dfa_for_model, '../calculated_data/dfa_for_model.csv')
 
 ```
 
