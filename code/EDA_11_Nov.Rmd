@@ -89,14 +89,14 @@ library(doBy)
 # xlsx files -- Data for SU Part 1 - Filed Cases and Hearings
 D11_filed_cases <- read_excel("../Data/Data for SU Part 1 - Filed Cases and Hearings.xlsx", sheet = "FiledCases SU") %>% clean_names()
 D12_case_event <- read_excel("../Data/Data for SU Part 1 - Filed Cases and Hearings.xlsx", sheet = "CaseEvents SU") %>% clean_names()
-D13_case_event_key <- read_excel("../Data/Data for SU Part 1 - Filed Cases and Hearings.xlsx", sheet = "CaseEvent Key") %>% clean_names()
+# D13_case_event_key <- read_excel("../Data/Data for SU Part 1 - Filed Cases and Hearings.xlsx", sheet = "CaseEvent Key") %>% clean_names()
 D14_case_type <- read_excel("../Data/Data for SU Part 1 - Filed Cases and Hearings.xlsx", sheet = "CaseType Key") %>% clean_names()
 #
 # xlsx files -- Data for SU Part 2
 D21_charge <- read_excel("../Data/Data for SU Part 2.xlsx", sheet = "SU Charges") %>% clean_names()
 D22_charge_def <- read_excel("../Data/Data for SU Part 2.xlsx", sheet = "Charge Definitions") %>% clean_names()
 D23_dispo_key <- read_excel("../Data/Data for SU Part 2.xlsx", sheet = "Disposition Key") %>% clean_names()
-D24_crime_hist <- read_excel("../Data/Data for SU Part 2.xlsx", sheet = "SU CrimHist") %>% clean_names()
+# D24_crime_hist <- read_excel("../Data/Data for SU Part 2.xlsx", sheet = "SU CrimHist") %>% clean_names()
 #
 # xlsx files -- Data for SU Part 3 - custody history
 D31_custody_hist <- read_excel("../Data/Data for SU Part 3 - custody history.xlsx", sheet = "CustodyHistory SU") %>% clean_names()
@@ -104,6 +104,10 @@ D31_custody_hist <- read_excel("../Data/Data for SU Part 3 - custody history.xls
 # treated events_with_missing_status
 events_with_missing_def_status <- read.csv("../calculated_data/events_with_missing_def_status.csv", header = TRUE)
 #
+
+#----------------------  Received new Data for D24 and D13  -----------------#
+D13_case_event_key <- read_excel("../Data/Data for SU Part 4 - cleaned criminal history and updated hearing key.xlsx", sheet = "CaseEvent Key") %>% clean_names()
+D24_crime_hist <- read_excel("../Data/Data for SU Part 4 - cleaned criminal history and updated hearing key.xlsx", sheet = "SU CrimHist") %>% clean_names()
 ```
 
 # Cleaning the Data
@@ -157,6 +161,7 @@ Missing Values:
   + We have `37 + 3 = 40` records where Gender is either missing or unknown
   + Case type has `8031` records with missing data
   + We don't have age or age group for 23 filed cases
+  + Max age is 118, this is odd
 
 ## D12_case_event
 
@@ -200,28 +205,30 @@ Missing Values:
 + Post Case Setting: Any event that is after the first case setting date
 
 ```{r}
+### ----------  Now we have case_stage from DAVID, No mutation required now  ---------- ###
+### ----------  Commentiing the code  ------------------------------------------------- ###
 
-D13_case_event_key <- D13_case_event_key %>%
-  # mutate_at(c("hearing_code"), factor) %>% 
-  mutate(
-    case_setting_stage = fct_collapse(
-      hearing_code,
-      arraignment = c("HRARRSC"),                                                      #--- (+) SG
-      case_setting = c("HRCS", "HRCSGP", "HRCSNWK", "HRCSNWS", "HRCSWK", "HRCSWS"),
-      # before = c(
-      #   "CSHNOWV", "DEFBWO", "DRGTH", "HR1AP", "HR1APB", 
-      #   "HR2AP", "HRBOND", "HRCOMP", "HRCOMPAR",
-      #   "HRCOMPBS", "HRCOMPCS", "HRCOMPKA", "HRCOMPKC", 
-      #   "HRCOMPKT", "HRCOMPTR", "HRCPLSNT", "HRCRMO"
-      # ),
-      # after = c(
-      #   "HRCTCOMP", "HROM", "HROMCON", "HRPLEA", "HRPT", "HRSNTSC", "HRSTATCF", 
-      #   "LECSREC", "MOCCAP", "TRSTSC", "TRSTSCCN", "WARARRDC", "WARARRSC"
-      # ),
-      drug_court = c("HRARDR", "HRBWSC", "HRDR1", "HRDR2", "HRDRC")                    #--- (+) SG: others -> drug_court
-    ))
-  # ) %>% 
-  # replace_with_na(list(case_setting_stage = c("DEFFTA", "DEFFTABT")))
+# D13_case_event_key <- D13_case_event_key %>%
+#   # mutate_at(c("hearing_code"), factor) %>% 
+#   mutate(
+#     case_setting_stage = fct_collapse(
+#       hearing_code,
+#       arraignment = c("HRARRSC"),                                                      #--- (+) SG
+#       case_setting = c("HRCS", "HRCSGP", "HRCSNWK", "HRCSNWS", "HRCSWK", "HRCSWS"),
+#       # before = c(
+#       #   "CSHNOWV", "DEFBWO", "DRGTH", "HR1AP", "HR1APB", 
+#       #   "HR2AP", "HRBOND", "HRCOMP", "HRCOMPAR",
+#       #   "HRCOMPBS", "HRCOMPCS", "HRCOMPKA", "HRCOMPKC", 
+#       #   "HRCOMPKT", "HRCOMPTR", "HRCPLSNT", "HRCRMO"
+#       # ),
+#       # after = c(
+#       #   "HRCTCOMP", "HROM", "HROMCON", "HRPLEA", "HRPT", "HRSNTSC", "HRSTATCF", 
+#       #   "LECSREC", "MOCCAP", "TRSTSC", "TRSTSCCN", "WARARRDC", "WARARRSC"
+#       # ),
+#       drug_court = c("HRARDR", "HRBWSC", "HRDR1", "HRDR2", "HRDRC")                    #--- (+) SG: others -> drug_court
+#     ))
+#   # ) %>% 
+#   # replace_with_na(list(case_setting_stage = c("DEFFTA", "DEFFTABT")))
 
 ```
 
@@ -237,7 +244,7 @@ This dataset does not map to anything, so we will ignore it.
 + We do not require these columns -> `Referral Date`, `Referral Charge(s)`, `Original Charge(s)`, `Warning`, `Description`
 
 ```{r}
-D21_charge <- read_excel("../Data/Data for SU Part 2.xlsx", sheet = "SU Charges") %>% clean_names()
+# D21_charge <- read_excel("../Data/Data for SU Part 2.xlsx", sheet = "SU Charges") %>% clean_names()
 
 D21_charge <- D21_charge %>% 
   mutate_at(c("offense_start_date", "offense_end_date", "filing_date", "disposition_date"), mdy) %>% 
@@ -321,6 +328,11 @@ D23_dispo_key <- D23_dispo_key %>%
     )
   ) %>% 
   mutate_at(c("verdict"), factor)
+
+# delete records where ranking is 5
+D23_dispo_key <- D23_dispo_key %>%
+   filter(ranking != 5)
+
 ```
 
 ## D24_crime_hist
@@ -349,8 +361,8 @@ D24_crime_hist <- D24_crime_hist %>%
   select(-c(jurisdiction_state, conviction_level, last_crime)) %>%
   ungroup()
 
-# criminal history sort by recent crime per file number
-crime_hist_by_file <- D24_crime_hist %>%
+# criminal history sort by recent crime per defendant id
+crime_hist_by_def <- D24_crime_hist %>%
                         group_by(defendant_id) %>% 
                         arrange(last_crime_period) %>%
                         slice(1) %>%
@@ -424,8 +436,8 @@ D11_filed_cases <- D11_filed_cases %>%
 # D12_case_event <- D12_case_event %>% 
 #   filter(!(is.na(event_docket_date) & event_code != "DEFFTA"))
 
-D21_charge <- D21_charge %>% 
-  filter(!(is.na(disposition_date) | is.na(disposition_code)))
+# D21_charge <- D21_charge %>% 
+#   filter(!(is.na(disposition_date) | is.na(disposition_code)))
 
 ```
 
@@ -454,22 +466,28 @@ events_with_missing_def_status <- events_with_missing_def_status[events_with_mis
 
 1.	 Representative charge for each File Number as one File Number may have multiple charges. -> `D11_cases_rep_charge`
 
-2.	 Critical stage of a case is case setting  (Arraignment, case setting, before case setting, after case setting) -> `D12_D13_case_event_stages`
+2.	 Critical stage of a case is case setting  (Arraignment, case setting, before case setting, after case setting) -> `case_stage_by_file`
 
-3.	Last Arraignment Date -> `D12_D13_case_event_stages`
+3.	Last Arraignment Date -> `last_arr_date_by_file`
 
 4.	Filling missing Defendant_Event_Status field in CaseEvents table -> `events_with_missing_status`
 
 ## Representative Charges
 
 + representative charge for each File Number as one File Number may have multiple charges.
-+ Datasets required --> D11, D21, D22
++ Datasets required --> D21, D22
 + Order of precedence -> Charge Class, Seriousness, violent
 
 ```{r}
 # join D21_charge and D22_charge_def to get charge class, seriousness and violent information for each file number
-represent_charge_by_file <- left_join(D21_charge, D22_charge_def, by = c("charge_code" = "code")) %>%
-                              select(-c(description))
+represent_charge_by_file <- left_join(D21_charge, D22_charge_def, by = c("charge_code" = "code"))
+
+# Drug cases definition 1
+drug_case_desc <- represent_charge_by_file
+drug_case_desc$drug_case <- ifelse(grepl("Violation of the Uniform Controlled Substances Act", represent_charge_by_file$description), "yes", "no")
+# filter records where drug_case is 'yes'
+drug_case_desc <- drug_case_desc[drug_case_desc$drug_case == 'yes', ] %>%
+                    select(c(file_number))
 
 # arrange/sort records as File_number-ASC, Class-DESC, Seriousness-DESC, Violent-DESC
 represent_charge_by_file <- represent_charge_by_file %>%
@@ -479,7 +497,7 @@ represent_charge_by_file <- represent_charge_by_file %>%
                               slice(1) %>%
                               ungroup()  %>%
                               select(-c(offense_start_date, offense_end_date, filing_date,
-                                        disposition_date, disposition_code, charge_enhanced))
+                                        disposition_date, disposition_code, charge_enhanced, description))
 
 ```
 
@@ -488,29 +506,39 @@ represent_charge_by_file <- represent_charge_by_file %>%
 ```{r}
 # D12_case_events and D13_case_event_key to map the hearing codes to get 3 things, arraignment, case_setting, drug_court
 cs_1 <- left_join(D12_case_event, D13_case_event_key, by = c("event_code" = "hearing_code")) %>%
-                                select(-c(description))
+          select(-c(description))
+
+# filter records where case is drug_Case
+drug_cases <- cs_1[cs_1$hearing_event_classification == 'Drug Court', ] %>%
+                select(c(file_number))
+
+drug_cases = rbind(drug_case_desc, drug_cases)
+drug_cases <- drug_cases[!duplicated(drug_cases), ]
+
+# filter records where case has competency hearing
+compt_cases <- cs_1[cs_1$hearing_event_classification == 'Competency', ]
 
 # last arraignment date for each file number
-last_arr_date_by_file <- cs_1[cs_1$case_setting_stage == 'arraignment', ] %>%
+last_arr_date_by_file <- cs_1[cs_1$hearing_event_classification == 'Arraignment', ] %>%
                         select(-c(defendant_id, event_code, event_enter_date, defendant_event_status)) %>%
-                        group_by(file_number) %>% 
+                        group_by(file_number) %>%
                         arrange(file_number, desc(event_docket_date)) %>%
                         slice(1) %>%
                         ungroup()
 
 colnames(last_arr_date_by_file)[colnames(last_arr_date_by_file) == 'event_docket_date'] <- 'last_arr_date'
-colnames(last_arr_date_by_file)[colnames(last_arr_date_by_file) == 'case_setting_stage'] <- 'arraignment'
+colnames(last_arr_date_by_file)[colnames(last_arr_date_by_file) == 'hearing_event_classification'] <- 'arraignment'
 
 # first case setting date for each file number
-first_cs_date_by_file <- cs_1[cs_1$case_setting_stage == 'case_setting', ] %>%
+first_cs_date_by_file <- cs_1[cs_1$hearing_event_classification == 'Case Setting', ] %>%
                         select(-c(defendant_id, event_code, event_enter_date, defendant_event_status)) %>%
-                        group_by(file_number) %>% 
+                        group_by(file_number) %>%
                         arrange(file_number, event_docket_date) %>%
                         slice(1) %>%
                         ungroup()
 
 colnames(first_cs_date_by_file)[colnames(first_cs_date_by_file) == 'event_docket_date'] <- 'first_cs_date'
-colnames(first_cs_date_by_file)[colnames(first_cs_date_by_file) == 'case_setting_stage'] <- 'case_setting'
+colnames(first_cs_date_by_file)[colnames(first_cs_date_by_file) == 'hearing_event_classification'] <- 'case_setting'
 
 # join 3 dataframes (cs_1, last_arr_date_by_file, first_cs_date_by_file) to get last_arraignment_date and first_case_setting_date for each file number
 cs_2 <- left_join(cs_1, last_arr_date_by_file, by = c("file_number")) %>%
@@ -518,49 +546,49 @@ cs_2 <- left_join(cs_1, last_arr_date_by_file, by = c("file_number")) %>%
 cs_2 <- left_join(cs_2, first_cs_date_by_file, by = c("file_number")) %>%
                                 select(-c(case_setting))
 
-# new column with 4 categories: A(Arraignment), B(Before Case Setting), C(Case Setting), D(After Case Setting)
-case_stage_by_file <- cs_2 %>%  
-      mutate(case_stage = ifelse(case_setting_stage == 'drug_court', 'E(Drug court)', 
-                            ifelse(event_docket_date <= last_arr_date , 'A(Arraignment)', 
-                              ifelse(event_docket_date > last_arr_date & event_docket_date < first_cs_date, 'B(Before Case Setting)',
-                                ifelse(event_docket_date == first_cs_date, 'C(Case Setting)',
-                                  ifelse(event_docket_date > first_cs_date, 'D(After Case Setting)', event_code)))))) %>%
-  select(-c(case_setting_stage))
+###### # new column with 4 categories: A(Arraignment), B(Before Case Setting), C(Case Setting), D(After Case Setting)
+###### case_stage_by_file <- cs_2 %>%  
+######       mutate(case_stage = ifelse(case_setting_stage == 'drug_court', 'E(Drug court)', 
+######                             ifelse(event_docket_date <= last_arr_date , 'A(Arraignment)', 
+######                               ifelse(event_docket_date > last_arr_date & event_docket_date < first_cs_date, 'B(Before Case Setting)',
+######                                 ifelse(event_docket_date == first_cs_date, 'C(Case Setting)',
+######                                   ifelse(event_docket_date > first_cs_date, 'D(After Case Setting)', event_code)))))) %>%
+######   select(-c(case_setting_stage))
 
 # filter only records where event_code is DEFFTA
-dfa_file_cases <- case_stage_by_file[case_stage_by_file$event_code == 'DEFFTA', ]
+dfa_file_cases <- cs_1[cs_1$event_code == 'DEFFTA', ]
 
-# new column with 5 categories: A(Arraignment), B(Before Case Setting), C(Case Setting), D(After Case Setting), E(Drug court)
-case_stage_by_file <- case_stage_by_file %>%  
-      mutate(case_stage_dfa =ifelse(is.na(case_stage), (ifelse((!is.na(last_arr_date) | (!is.na(last_arr_date) & is.na(first_cs_date))) & event_enter_date <= last_arr_date , 'A(Arraignment)', 
-                                ifelse((!is.na(first_cs_date) & !is.na(last_arr_date)) & (event_enter_date < first_cs_date & event_enter_date > last_arr_date), 'B(Before Case Setting)',
-                                  ifelse(!is.na(first_cs_date) & event_enter_date == first_cs_date, 'C(Case Setting)',
-                                    ifelse(!is.na(first_cs_date) & event_enter_date > first_cs_date, 'D(After Case Setting)', 
-                                      ifelse(is.na(first_cs_date) & is.na(last_arr_date), 'E(Drug court)',
-                                        ifelse((((is.na(last_arr_date) & !is.na(first_cs_date)) & event_enter_date < first_cs_date) | ((!is.na(last_arr_date) & is.na(first_cs_date)) & event_enter_date > last_arr_date)), 'B(Before Case Setting)', case_stage))))))), case_stage))
+###### # new column with 5 categories: A(Arraignment), B(Before Case Setting), C(Case Setting), D(After Case Setting), E(Drug court)
+###### case_stage_by_file <- case_stage_by_file %>%  
+######       mutate(case_stage_dfa =ifelse(is.na(case_stage), (ifelse((!is.na(last_arr_date) | (!is.na(last_arr_date) & is.na(first_cs_date))) & event_enter_date <= last_arr_date , 'A(Arraignment)', 
+######                                 ifelse((!is.na(first_cs_date) & !is.na(last_arr_date)) & (event_enter_date < first_cs_date & event_enter_date > last_arr_date), 'B(Before Case Setting)',
+######                                   ifelse(!is.na(first_cs_date) & event_enter_date == first_cs_date, 'C(Case Setting)',
+######                                     ifelse(!is.na(first_cs_date) & event_enter_date > first_cs_date, 'D(After Case Setting)', 
+######                                       ifelse(is.na(first_cs_date) & is.na(last_arr_date), 'E(Drug court)',
+######                                         ifelse((((is.na(last_arr_date) & !is.na(first_cs_date)) & event_enter_date < first_cs_date) | ((!is.na(last_arr_date) & is.na(first_cs_date)) & event_enter_date > last_arr_date)), 'B(Before Case Setting)', case_stage))))))), case_stage))
 
-# keeping only records which have these 5 values as above
-case_stage_by_file = filter(case_stage_by_file, (case_stage_dfa %in% c("A(Arraignment)", "B(Before Case Setting)", "C(Case Setting)", "D(After Case Setting)", "E(Drug court)")))
+###### # keeping only records which have these 5 values as above
+###### case_stage_by_file = filter(case_stage_by_file, (case_stage_dfa %in% c("A(Arraignment)", "B(Before Case Setting)", "C(Case Setting)", "D(After Case Setting)", "E(Drug court)")))
 
-# total DFA by file
-# case_stage_by_file <- case_stage_by_file %>%
-#                         group_by(file_number) %>%
-#                         summarise(total_dfa = sum(event_code == "DEFFTA")) 
+# # total DFA by file
+# dfa_file_cases <- dfa_file_cases %>%
+#                     group_by(file_number) %>%
+#                     summarise(total_dfa = sum(event_code == "DEFFTA"))
 
 # Earliest DEFFTA  at which stage for each file number
-case_stage_by_file <- case_stage_by_file %>%
-                        group_by(file_number) %>%  
-                        mutate(total_dfa = length(which(event_code == "DEFFTA"))) %>%
-                        arrange(file_number, event_enter_date) %>%
-                        slice(1) %>%
-                        select(c(file_number, case_stage_dfa, total_dfa)) %>%
-                        ungroup()
+dfa_file_cases <- dfa_file_cases %>%
+                    group_by(file_number) %>%  
+                    mutate(total_dfa = length(which(event_code == "DEFFTA"))) %>%
+                    arrange(file_number, event_enter_date) %>%
+                    slice(1) %>%
+                    select(c(file_number, hearing_event_classification, total_dfa)) %>%
+                    ungroup()
 
-# new column in "case_stage_by_file" matching with "dfa_file_cases" to check if filed case has DEFFTA
-case_stage_by_file$dfa <- ifelse(is.na(match(case_stage_by_file$file_number, dfa_file_cases$file_number)),"No", "Yes")
+# # new column in "case_stage_by_file" matching with "dfa_file_cases" to check if filed case has DEFFTA
+# case_stage_by_file$dfa <- ifelse(is.na(match(case_stage_by_file$file_number, dfa_file_cases$file_number)),"No", "Yes")
 
 # Remove un-necessary datasets
-rm(cs_1, cs_2, dfa_file_cases)
+rm(cs_1, cs_2, case_stage_by_file, drug_case_desc)
 
 ```
 
@@ -568,30 +596,42 @@ rm(cs_1, cs_2, dfa_file_cases)
 ## preparing dataset for DFA rate EDA in powerBI
 
 ```{r}
-# We need DFA rates by 
-# Age-group, Gender, Venue           -- in D11_filed_cases dataset
+# We need DFA rates of per file_number by 
+# Age, Age-group, Gender, Venue      -- in D11_filed_cases dataset
 # charge class, seriousness, violent -- in represent_charge_by_file
 # Criminal History                   -- in D24_crime_hist / crime_hist_by_file
-# Critical stage of case             -- in case_stage_by_file
+# Critical stage of case, total dfa  -- in dfa_file_cases
 # Custody Status                     -- events_with_missing_value
+# Drug case(Yes/No)                  -- in drug_cases
+# Competency Case(Yes/No)            -- in compt_cases
 
 rm(dfa_by_category, dfa_for_model)
 
-# Age-group, Gender, Venue, charge class, seriousness, violent per file number
+### Age-group, Gender, Venue, charge class, seriousness, violent per file number
 dfa_by_category <- merge(x = D11_filed_cases, y = represent_charge_by_file, by = "file_number", all.x=TRUE) %>%
                       select(-c(event_enter_date))
 
-# new column in "dfa_by_category" matching with "D24_crime_hist" to get criminal history status in Yes or No
+### new column in "dfa_by_category" matching with "D24_crime_hist" to get criminal history status in Yes or No
 dfa_by_category$crime_hist <- ifelse(is.na(match(dfa_by_category$defendant_id, D24_crime_hist$defendant_id)),"No", "Yes")
 
-# now for the files which have DFA atleast once with stage of the case -- case_stage_by_file
-dfa_by_category <- merge(x = dfa_by_category, y = case_stage_by_file, by = "file_number", all.x=TRUE)
+### now for the files which have DFA atleast once with stage of the case -- case_stage_by_file
+dfa_by_category <- merge(x = dfa_by_category, y = dfa_file_cases, by = "file_number", all.x=TRUE)
+  # fill total_dfa value nas with 0
+dfa_by_category$total_dfa[is.na(dfa_by_category$total_dfa)] <- 0
+  # new column in "dfa_by_category" matching with "dfa_file_cases" to check if filed case has DFA - yes/no
+dfa_by_category$dfa <- ifelse(is.na(match(dfa_by_category$file_number, dfa_file_cases$file_number)),"No", "Yes")
 
-# adding custody status of the defendant as well
+### adding custody status of the defendant as well
 dfa_by_category <- merge(x = dfa_by_category, y = events_with_missing_def_status, by = c("file_number", "defendant_id"), all.x=TRUE)
 
+### Case is drug case - Yes/No
+dfa_by_category$drug_case <- ifelse(is.na(match(dfa_by_category$file_number, drug_cases$file_number)),"No", "Yes")
+
+### Case has atleast one competency hearing - Yes/No
+dfa_by_category$compt_case <- ifelse(is.na(match(dfa_by_category$file_number, compt_cases$file_number)),"No", "Yes")
+
 # export dfa_by_category to csv for powerbi
-# ###### write.csv(dfa_by_category, '../calculated_data/dfa_by_category_eda.csv')
+write.csv(dfa_by_category, '../calculated_data/dfa_by_category_eda.csv')
 
 # summary(dfa_by_category)
 # summary(D11_filed_cases)
@@ -599,55 +639,55 @@ dfa_by_category <- merge(x = dfa_by_category, y = events_with_missing_def_status
 
 ```{r}
 
-dfa_for_model <- dfa_by_category %>%
-                      select(-c(case_types, charge_code, file_number, defendant_id))
-
-# 1. delete records where gender is "Unknown"
-dfa_for_model <- dfa_for_model[!(dfa_for_model$gender=="Unknown"),]
-# 2. FIll nas in age with mean of the column
-# dfa_for_model <- dfa_for_model[, age := na.aggregate(age)]
-
-# fill missing of seriousness
-class_serious <- D22_charge_def %>%
-                  group_by(class) %>%
-                  dplyr::summarize(Mean = mean(seriousness, na.rm=TRUE))
-
-class_serious <- class_serious[!is.na(class_serious$class),]
-
-dfa_for_model$seriousness[is.na(dfa_for_model$seriousness)] <- class_serious$Mean[match(dfa_for_model$class, class_serious$class)][which(is.na(dfa_for_model$seriousness))]
-
-rm(class_serious)
-
-
-mean(my.xldataset$mcs1, na.rm=TRUE)
-
-dfa_for_model$class <- ifelse(is.na(dfa_for_model$class), 'Other', dfa_for_model$class)
-dfa_for_model$class <- as.factor(dfa_for_model$class)
-
-dfa_for_model$seriousness <- ifelse(is.na(dfa_for_model$seriousness), 99, dfa_for_model$seriousness)
-dfa_for_model$seriousness <- as.factor(dfa_for_model$seriousness)
-
-dfa_for_model$is_violent <- ifelse(is.na(dfa_for_model$is_violent), 0, dfa_for_model$is_violent)
-
-dfa_for_model$defendant_status <- ifelse(is.na(dfa_for_model$defendant_status), 'Other', dfa_for_model$defendant_status)
-dfa_for_model$defendant_status <- as.numeric(as.factor(dfa_for_model$defendant_status))
-
-dfa_for_model$gender      <- as.numeric(dfa_for_model$gender)
-dfa_for_model$venue       <- as.numeric(dfa_for_model$venue)
-# dfa_for_model$age_group   <- as.numeric(dfa_for_model$age_group)
-dfa_for_model$class       <- as.numeric(dfa_for_model$class)
-dfa_for_model$is_violent  <- as.numeric(dfa_for_model$is_violent)
-dfa_for_model$case_stage_dfa   <- as.numeric(as.factor(dfa_for_model$case_stage_dfa))
-
-# dfa_for_model$dfa <- ifelse(dfa_for_model$dfa == 'Yes', 1, 0)
-dfa_for_model$crime_hist <- ifelse(dfa_for_model$crime_hist == 'Yes', 1, 0)
-
-
-str(dfa_for_model)
-summary(dfa_for_model)
-
-# export dfa_by_category to csv for powerbi
-write.csv(dfa_for_model, '../calculated_data/dfa_for_model.csv')
+# dfa_for_model <- dfa_by_category %>%
+#                       select(-c(case_types, charge_code, file_number, defendant_id))
+# 
+# # 1. delete records where gender is "Unknown"
+# dfa_for_model <- dfa_for_model[!(dfa_for_model$gender=="Unknown"),]
+# # 2. FIll nas in age with mean of the column
+# # dfa_for_model <- dfa_for_model[, age := na.aggregate(age)]
+# 
+# # fill missing of seriousness
+# class_serious <- D22_charge_def %>%
+#                   group_by(class) %>%
+#                   dplyr::summarize(Mean = mean(seriousness, na.rm=TRUE))
+# 
+# class_serious <- class_serious[!is.na(class_serious$class),]
+# 
+# dfa_for_model$seriousness[is.na(dfa_for_model$seriousness)] <- class_serious$Mean[match(dfa_for_model$class, class_serious$class)][which(is.na(dfa_for_model$seriousness))]
+# 
+# rm(class_serious)
+# 
+# 
+# # mean(my.xldataset$mcs1, na.rm=TRUE)
+# 
+# dfa_for_model$class <- ifelse(is.na(dfa_for_model$class), 'Other', dfa_for_model$class)
+# dfa_for_model$class <- as.factor(dfa_for_model$class)
+# 
+# dfa_for_model$seriousness <- ifelse(is.na(dfa_for_model$seriousness), 99, dfa_for_model$seriousness)
+# dfa_for_model$seriousness <- as.factor(dfa_for_model$seriousness)
+# 
+# dfa_for_model$is_violent <- ifelse(is.na(dfa_for_model$is_violent), 0, dfa_for_model$is_violent)
+# 
+# dfa_for_model$defendant_status <- ifelse(is.na(dfa_for_model$defendant_status), 'Other', dfa_for_model$defendant_status)
+# dfa_for_model$defendant_status <- as.numeric(as.factor(dfa_for_model$defendant_status))
+# 
+# dfa_for_model$gender      <- as.numeric(dfa_for_model$gender)
+# dfa_for_model$venue       <- as.numeric(dfa_for_model$venue)
+# # dfa_for_model$age_group   <- as.numeric(dfa_for_model$age_group)
+# dfa_for_model$class       <- as.numeric(dfa_for_model$class)
+# dfa_for_model$is_violent  <- as.numeric(dfa_for_model$is_violent)
+# dfa_for_model$case_stage_dfa   <- as.numeric(as.factor(dfa_for_model$case_stage_dfa))
+# 
+# # dfa_for_model$dfa <- ifelse(dfa_for_model$dfa == 'Yes', 1, 0)
+# dfa_for_model$crime_hist <- ifelse(dfa_for_model$crime_hist == 'Yes', 1, 0)
+# 
+# 
+# str(dfa_for_model)
+# summary(dfa_for_model)
+# 
+# # export dfa_by_category to csv for powerbi
+# write.csv(dfa_for_model, '../calculated_data/dfa_for_model.csv')
 
 ```
 
@@ -695,8 +735,8 @@ hist(file_last_arr$dispo_time_arraign, col="orange",
 ```{r}
 # merge file_last_arr with D23_dispo_key to get disposition ranking
 dispo_time_dispo_rank <- merge(x = file_last_arr, y = D23_dispo_key, by = "disposition_code", all.x=TRUE) %>%
-                            group_by(file_number, charge_code) %>% 
-                            arrange(file_number, ranking) %>%
+                            group_by(file_number) %>% 
+                            arrange(file_number, desc(ranking)) %>%
                             slice(1) %>%
                             ungroup() %>% 
                           select(c(file_number, filing_date, disposition_date, charge_enhanced, charge_code, last_arr_date, 
@@ -705,35 +745,24 @@ dispo_time_dispo_rank <- merge(x = file_last_arr, y = D23_dispo_key, by = "dispo
 rm(file_last_arr)
 
 # for each file number in dispo_time_dispo_rank dataframe, get from dfa_by_category df
-# Age-group, Gender, Venue           
+# Age, Age-group, Gender, Venue           
 # charge class, seriousness, violent 
+# hearing_event_stage
 # Criminal History                   
 # Custody Status
+# drug case (Yes/No), Competency case (Yes/No)
+# total dfa by file
 dispo_by_category <- merge(x = dispo_time_dispo_rank, y = dfa_by_category, by = "file_number", all.x=TRUE) %>%  
       mutate(serious_cat = ifelse(seriousness <= 5, '<=5', 
                             ifelse(seriousness > 5 & seriousness <= 10, '5-10', 
                               ifelse(seriousness > 5, '>10', seriousness))))  %>%
-                         select(-c(filing_date, disposition_date, last_arr_date, case_types, charge_code.y,
-                                   event_code, case_stage_dfa, seriousness))
+                         select(-c(filing_date, last_arr_date, case_types, charge_code.y,
+                                   seriousness))
+
+# # export dfa_by_category to csv
+# write.csv(dispo_by_category, '../calculated_data/dispo_by_category.csv')
 ```
 
-
-## Drug Court Cases
-
-```{r}
-dg_1 <- left_join(D12_case_event, D13_case_event_key, by = c("event_code" = "hearing_code")) %>%
-                                select(-c(description))
-
-# delete records which are not drug cases
-dg_1 <- dg_1[(dg_1$case_setting_stage == "drug_court"), ]
-
-#
-# new column in "dispo_by_category" matching with "dg_1" to get criminal history status in Yes or No
-dispo_by_category$drug_court <- ifelse(is.na(match(dispo_by_category$file_number, dg_1$file_number)),"No", "Yes")
-
-rm(dg_1)
-
-```
 
 ## Filing date - Histogram and Basic stats
 
