@@ -40,19 +40,29 @@ Read in the dataset.
 dispo_by_category <- read_csv(here::here("data", "processed", "dispo_by_category.csv"))
 represent_charge_by_file <- read_csv(here::here("data", "processed", "represent_charge_by_file.csv"))
 case_competency_hearing <- read_csv(here::here("data", "processed", "case_competency_hearing.csv"))
+case_trial_set_event <- read_csv(here::here("data", "processed", "case_trial_set_event.csv"))
+defendant_ages <- read_csv(here::here("data", "processed", "defendant_ages.csv"))
+# defendant_seriousness <- read_csv(here::here("data", "processed", "defendant_seriousness.csv"))
+defendant_drug_charge <- read_csv(here::here("data", "processed", "defendant_drug_charge.csv"))
+defendant_drug_court <- read_csv(here::here("data", "processed", "defendant_drug_court.csv"))
 
 base_data <- dispo_by_category %>% 
-  left_join(
-    represent_charge_by_file %>% inner_join(
-      case_competency_hearing, by = c("file_number" = "file_number")
-    ),
-    by = c("file_number" = "file_number")
-  ) %>% 
-  replace_na(list(class.x = "Other", serious_cat = "Other", defendant_status = "Other", seriousness = 0)) %>% 
+  # select(-c(age, age_group)) %>% 
+  left_join(represent_charge_by_file, by = c("file_number" = "file_number")) %>% 
+  left_join(case_competency_hearing, by = c("file_number" = "file_number")) %>% 
+  left_join(case_trial_set_event, by = c("file_number" = "file_number")) %>% 
+  # left_join(defendant_ages %>% select(-c(defendant_id, age_group)), by = c("file_number" = "file_number")) %>% 
+  # left_join(defendant_seriousness %>% select(-defendant_id), by = c("file_number" = "file_number")) %>% 
+  left_join(defendant_drug_charge, by = c("file_number" = "file_number")) %>% 
+  left_join(defendant_drug_court, by = c("file_number" = "file_number")) %>% 
+  replace_na(list(class.x = "Other", serious_cat = "Other", defendant_status = "Other", seriousness = 0, no_of_trial_sets = 0)) %>% 
   mutate(
     is_rep_charge = if_else(charge_code.x == charge_code | is.na(charge_code.x), 1, 0),
     class_a = if_else(class.x == "A", 1, 0),
-    is_felony = if_else(class.x %in% c("A", "B", "C"), 1, 0)
+    is_felony = if_else(class.x %in% c("A", "B", "C"), 1, 0),
+    is_drug_charge = if_else(no_of_drug_charges > 0, 1, 0),
+    is_drug_court = if_else(no_of_drug_court > 0, 1, 0),
+    is_trial_set = if_else(no_of_trial_sets > 0, 1, 0)
   ) %>% 
   filter(
     !is.na(dispo_time_arraign),
@@ -63,14 +73,18 @@ base_data <- dispo_by_category %>%
     between(dispo_time_filing, 0, 5 * 365),
     between(dispo_time_arraign, 0, 5 * 365)
   ) %>% 
-  mutate_at(c("age_group", "gender", "crime_hist", "class.x", "serious_cat", "defendant_status", "drug_court"), factor) %>% 
+  mutate_at(c("age_group", "gender", "crime_hist", "class.x", "serious_cat", "defendant_status"), factor) %>% 
   select(
-    dispo_time_arraign, dispo_time_filing, is_rep_charge, age_group, gender, crime_hist, 
-    class.x, class_a, is_felony, serious_cat, seriousness, defendant_status, total_dfa, drug_court, is_competency_hearing
-  ) %>% 
+    file_number, defendant_id,
+    dispo_time_filing, dispo_time_arraign, gender, age, age_group,
+    class.x, class_a, is_felony, seriousness, serious_cat, crime_hist, total_dfa,
+    no_of_drug_charges, no_of_drug_court, no_of_trial_sets,
+    is_drug_charge, is_drug_court, is_trial_set, is_competency_hearing,
+    defendant_status
+  ) %>%
   rename(charge_class = class.x)
 
-base_data$age_group <- relevel(base_data$age_group, "<=18")
+base_data$age_group <- relevel(base_data$age_group, "LE_18")
 base_data$gender <- relevel(base_data$gender, "Female")
 base_data$crime_hist <- relevel(base_data$crime_hist, "No")
 base_data$charge_class <- relevel(base_data$charge_class, "M")
@@ -91,240 +105,1134 @@ test <- subset(base_data, sample == FALSE)
 
 We will be choosing our final model based on the following variables that we have found may have a numerical relationship with disposition time, per our exploratory analysis results.
 
-+ age group
-+ gender
-+ criminal history
-+ charge class
-    + OR whether it is a class A charge or not
-    + OR whether it is a felony charge or not
-+ seriousness
-    + either based on the seriousness classification OR based on the actual seriousness value assessed by the court
-+ defendant custody status
-+ representative charge
-+ number of DFAs
-+ case type: whether the case goes to drug court or not
-+ case event: whether there was a competency hearing or not
++ Age: either ...
+    + age (actual)
+    + age group
++ Gender
++ Criminal history (whether there is past history)
++ Charge type and seriousness:
+    + charge class (Actual)
+    + charge class A or not (binary)
+    + felony charge or not
+    + seriousness value
+    + seriousness categorization
++ Failure to appear
+    + no of times defendant fails to appear
++ Events and charges:
+    + trial set events: no of trial setting events, or whether there were trial setting events or not
+    + competency hearing: whether there were competency hearings or not
++ Events and charges - Drug related:
+    + drug court: number of drug court hearings, or whether there were drug court hearings or not (binary)
+    + drug charge: number of drug related charges, or whether there were drug related charges or not (binary)
+
+The dependent variable is the time to disposition, either by filing date or arraignment date.
 
 There may be possible interactions between the following pairs of variables:
 
 + number of DFAs AND charge class
 + age group AND drug case
 
-## Model Selection - based on arraignment date
+```{r}
+
+# # SETS OF MODELS
+# 
+# age + gender + crime_hist + charge_class + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+# age + gender + crime_hist + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+# age + gender + crime_hist + serious_cat + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+# age + gender + crime_hist + class_a + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+# age + gender + crime_hist + is_felony + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+# 
+# age_group + gender + crime_hist + charge_class + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+# age_group + gender + crime_hist + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+# age_group + gender + crime_hist + serious_cat + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+# age_group + gender + crime_hist + class_a + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+# age_group + gender + crime_hist + is_felony + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+# 
+# age + gender + crime_hist + charge_class + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
+# age + gender + crime_hist + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
+# age + gender + crime_hist + serious_cat + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
+# age + gender + crime_hist + class_a + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
+# age + gender + crime_hist + is_felony + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
+# 
+# age_group + gender + crime_hist + charge_class + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
+# age_group + gender + crime_hist + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
+# age_group + gender + crime_hist + serious_cat + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
+# age_group + gender + crime_hist + class_a + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
+# age_group + gender + crime_hist + is_felony + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
+
+```
+
+## Model Selection - based on filing date
+
+Initialize data frame to record key metrics
+
+```{r}
+eval_filing <- data.frame(model_nbr = numeric(), r_squared = numeric(), mae = numeric(), mape = numeric())
+```
 
 ### Model 1
-
-This model is our base model and includes the following variables
-
-+ age_group 
-+ gender 
-+ crime_hist (whether there is previous criminal history)
-+ charge_class
-+ seriousness (based on category)
-+ defendant_status (custody status)
-+ total_dfa (no of times defendant failed to appear)
-+ drug_court (whether the case went to drug court)
-+ is_competency_hearing (whether there was a competency hearing or not)
 
 ```{r}
 
 model_1 <- lm(
   data = train,
   formula = dispo_time_filing ~ 
-    age_group + gender + crime_hist + charge_class + serious_cat + defendant_status + total_dfa + drug_court + is_competency_hearing
+    age + gender + crime_hist + charge_class + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
 )
 summary(model_1)
 result_1 <- tidy(model_1)
-
 y_pred_1 <- predict.lm(model_1, test)
 y_true_1 <- test$dispo_time_filing
 
-paste("MAE - Mean Absolute Error:", round(MLmetrics::MAE(y_pred_1, y_true_1), 4))
-paste("MSE - Mean Squared Error:", round(MLmetrics::MSE(y_pred_1, y_true_1), 4))
+r_sq_1 <- round(summary(model_1)$r.squared, 4)
+mae_1 <- round(MLmetrics::MAE(y_pred_1, y_true_1), 4)
+mape_1 <- round(MLmetrics::MAPE(y_pred_1, y_true_1), 4)
+
+paste("R-Squared:", r_sq_1)
+paste("MAE - Mean Absolute Error:", mae_1)
+paste("MAPE - Mean Absolute Percentage Error:", mape_1)
+
+eval_filing[1,] <- c(1, r_sq_1, mae_1, mape_1)
 
 ```
 
 ### Model 2
-
-Replace the original charge class with an identifier based on whether they were Class A charges (for most serious crimes) or not
 
 ```{r}
 
 model_2 <- lm(
   data = train,
   formula = dispo_time_filing ~ 
-    age_group + gender + crime_hist + class_a + serious_cat + defendant_status + total_dfa + drug_court + is_competency_hearing
+    age + gender + crime_hist + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
 )
 summary(model_2)
 result_2 <- tidy(model_2)
-
 y_pred_2 <- predict.lm(model_2, test)
 y_true_2 <- test$dispo_time_filing
 
-paste("MAE - Mean Absolute Error:", round(MLmetrics::MAE(y_pred_2, y_true_2), 4))
-paste("MSE - Mean Squared Error:", round(MLmetrics::MSE(y_pred_2, y_true_2), 4))
+r_sq_2 <- round(summary(model_2)$r.squared, 4)
+mae_2 <- round(MLmetrics::MAE(y_pred_2, y_true_2), 4)
+mape_2 <- round(MLmetrics::MAPE(y_pred_2, y_true_2), 4)
+
+paste("R-Squared:", r_sq_2)
+paste("MAE - Mean Absolute Error:", mae_2)
+paste("MAPE - Mean Absolute Percentage Error:", mape_2)
+
+eval_filing[2,] <- c(2, r_sq_2, mae_2, mape_2)
 
 ```
 
 ### Model 3
-
-We replace seriousness categorical measurement with original seriousness value
 
 ```{r}
 
 model_3 <- lm(
   data = train,
   formula = dispo_time_filing ~ 
-    age_group + gender + crime_hist + class_a + seriousness + defendant_status + total_dfa + drug_court + is_competency_hearing
+    age + gender + crime_hist + serious_cat + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
 )
 summary(model_3)
 result_3 <- tidy(model_3)
-
 y_pred_3 <- predict.lm(model_3, test)
 y_true_3 <- test$dispo_time_filing
 
-paste("MAE - Mean Absolute Error:", round(MLmetrics::MAE(y_pred_3, y_true_3), 4))
-paste("MSE - Mean Squared Error:", round(MLmetrics::MSE(y_pred_3, y_true_3), 4))
+r_sq_3 <- round(summary(model_3)$r.squared, 4)
+mae_3 <- round(MLmetrics::MAE(y_pred_3, y_true_3), 4)
+mape_3 <- round(MLmetrics::MAPE(y_pred_3, y_true_3), 4)
+
+paste("R-Squared:", r_sq_3)
+paste("MAE - Mean Absolute Error:", mae_3)
+paste("MAPE - Mean Absolute Percentage Error:", mape_3)
+
+eval_filing[3,] <- c(3, r_sq_3, mae_3, mape_3)
 
 ```
 
 ### Model 4
-
-We include interaction variables:
-
-+ number of DFAs AND charge class
-+ age group AND drug case
 
 ```{r}
 
 model_4 <- lm(
   data = train,
   formula = dispo_time_filing ~ 
-    gender + crime_hist + serious_cat + total_dfa + is_competency_hearing + defendant_status * class_a + age_group * drug_court
+    age + gender + crime_hist + class_a + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
 )
 summary(model_4)
 result_4 <- tidy(model_4)
-
 y_pred_4 <- predict.lm(model_4, test)
 y_true_4 <- test$dispo_time_filing
 
-paste("MAE - Mean Absolute Error:", round(MLmetrics::MAE(y_pred_4, y_true_4), 4))
-paste("MSE - Mean Squared Error:", round(MLmetrics::MSE(y_pred_4, y_true_4), 4))
+r_sq_4 <- round(summary(model_4)$r.squared, 4)
+mae_4 <- round(MLmetrics::MAE(y_pred_4, y_true_4), 4)
+mape_4 <- round(MLmetrics::MAPE(y_pred_4, y_true_4), 4)
+
+paste("R-Squared:", r_sq_4)
+paste("MAE - Mean Absolute Error:", mae_4)
+paste("MAPE - Mean Absolute Percentage Error:", mape_4)
+
+eval_filing[4,] <- c(4, r_sq_4, mae_4, mape_4)
+
+```
+
+### Model 5
+
+```{r}
+
+model_5 <- lm(
+  data = train,
+  formula = dispo_time_filing ~ 
+    age + gender + crime_hist + is_felony + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+)
+summary(model_5)
+result_5 <- tidy(model_5)
+y_pred_5 <- predict.lm(model_5, test)
+y_true_5 <- test$dispo_time_filing
+
+r_sq_5 <- round(summary(model_5)$r.squared, 4)
+mae_5 <- round(MLmetrics::MAE(y_pred_5, y_true_5), 4)
+mape_5 <- round(MLmetrics::MAPE(y_pred_5, y_true_5), 4)
+
+paste("R-Squared:", r_sq_5)
+paste("MAE - Mean Absolute Error:", mae_5)
+paste("MAPE - Mean Absolute Percentage Error:", mape_5)
+
+eval_filing[5,] <- c(5, r_sq_5, mae_5, mape_5)
+
+```
+
+### Model 6
+
+```{r}
+
+model_6 <- lm(
+  data = train,
+  formula = dispo_time_filing ~ 
+    age_group + gender + crime_hist + charge_class + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+)
+summary(model_6)
+result_6 <- tidy(model_6)
+y_pred_6 <- predict.lm(model_6, test)
+y_true_6 <- test$dispo_time_filing
+
+r_sq_6 <- round(summary(model_6)$r.squared, 4)
+mae_6 <- round(MLmetrics::MAE(y_pred_6, y_true_6), 4)
+mape_6 <- round(MLmetrics::MAPE(y_pred_6, y_true_6), 4)
+
+paste("R-Squared:", r_sq_6)
+paste("MAE - Mean Absolute Error:", mae_6)
+paste("MAPE - Mean Absolute Percentage Error:", mape_6)
+
+eval_filing[6,] <- c(6, r_sq_6, mae_6, mape_6)
+
+```
+
+### Model 7
+
+```{r}
+
+model_7 <- lm(
+  data = train,
+  formula = dispo_time_filing ~ 
+    age_group + gender + crime_hist + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+)
+summary(model_7)
+result_7 <- tidy(model_7)
+y_pred_7 <- predict.lm(model_7, test)
+y_true_7 <- test$dispo_time_filing
+
+r_sq_7 <- round(summary(model_7)$r.squared, 4)
+mae_7 <- round(MLmetrics::MAE(y_pred_7, y_true_7), 4)
+mape_7 <- round(MLmetrics::MAPE(y_pred_7, y_true_7), 4)
+
+paste("R-Squared:", r_sq_7)
+paste("MAE - Mean Absolute Error:", mae_7)
+paste("MAPE - Mean Absolute Percentage Error:", mape_7)
+
+eval_filing[7,] <- c(7, r_sq_7, mae_7, mape_7)
+
+```
+
+### Model 8
+
+```{r}
+
+model_8 <- lm(
+  data = train,
+  formula = dispo_time_filing ~ 
+    age_group + gender + crime_hist + serious_cat + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+)
+summary(model_8)
+result_8 <- tidy(model_8)
+y_pred_8 <- predict.lm(model_8, test)
+y_true_8 <- test$dispo_time_filing
+
+r_sq_8 <- round(summary(model_8)$r.squared, 4)
+mae_8 <- round(MLmetrics::MAE(y_pred_8, y_true_8), 4)
+mape_8 <- round(MLmetrics::MAPE(y_pred_8, y_true_8), 4)
+
+paste("R-Squared:", r_sq_8)
+paste("MAE - Mean Absolute Error:", mae_8)
+paste("MAPE - Mean Absolute Percentage Error:", mape_8)
+
+eval_filing[8,] <- c(8, r_sq_8, mae_8, mape_8)
+
+```
+
+### Model 9
+
+```{r}
+
+model_9 <- lm(
+  data = train,
+  formula = dispo_time_filing ~ 
+    age_group + gender + crime_hist + class_a + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+)
+summary(model_9)
+result_9 <- tidy(model_9)
+y_pred_9 <- predict.lm(model_9, test)
+y_true_9 <- test$dispo_time_filing
+
+r_sq_9 <- round(summary(model_9)$r.squared, 4)
+mae_9 <- round(MLmetrics::MAE(y_pred_9, y_true_9), 4)
+mape_9 <- round(MLmetrics::MAPE(y_pred_9, y_true_9), 4)
+
+paste("R-Squared:", r_sq_9)
+paste("MAE - Mean Absolute Error:", mae_9)
+paste("MAPE - Mean Absolute Percentage Error:", mape_9)
+
+eval_filing[9,] <- c(9, r_sq_9, mae_9, mape_9)
+
+```
+
+### Model 10
+
+```{r}
+
+model_10 <- lm(
+  data = train,
+  formula = dispo_time_filing ~ 
+    age_group + gender + crime_hist + is_felony + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+)
+summary(model_10)
+result_10 <- tidy(model_10)
+y_pred_10 <- predict.lm(model_10, test)
+y_true_10 <- test$dispo_time_filing
+
+r_sq_10 <- round(summary(model_10)$r.squared, 4)
+mae_10 <- round(MLmetrics::MAE(y_pred_10, y_true_10), 4)
+mape_10 <- round(MLmetrics::MAPE(y_pred_10, y_true_10), 4)
+
+paste("R-Squared:", r_sq_10)
+paste("MAE - Mean Absolute Error:", mae_10)
+paste("MAPE - Mean Absolute Percentage Error:", mape_10)
+
+eval_filing[10,] <- c(10, r_sq_10, mae_10, mape_10)
+
+```
+
+### Model 11
+
+```{r}
+
+model_11 <- lm(
+  data = train,
+  formula = dispo_time_filing ~ 
+    age + gender + crime_hist + charge_class + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
+)
+summary(model_11)
+result_11 <- tidy(model_11)
+y_pred_11 <- predict.lm(model_11, test)
+y_true_11 <- test$dispo_time_filing
+
+r_sq_11 <- round(summary(model_11)$r.squared, 4)
+mae_11 <- round(MLmetrics::MAE(y_pred_11, y_true_11), 4)
+mape_11 <- round(MLmetrics::MAPE(y_pred_11, y_true_11), 4)
+
+paste("R-Squared:", r_sq_11)
+paste("MAE - Mean Absolute Error:", mae_11)
+paste("MAPE - Mean Absolute Percentage Error:", mape_11)
+
+eval_filing[11,] <- c(11, r_sq_11, mae_11, mape_11)
+
+```
+
+### Model 12
+
+```{r}
+
+model_12 <- lm(
+  data = train,
+  formula = dispo_time_filing ~ 
+    age + gender + crime_hist + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
+)
+summary(model_12)
+result_12 <- tidy(model_12)
+y_pred_12 <- predict.lm(model_12, test)
+y_true_12 <- test$dispo_time_filing
+
+r_sq_12 <- round(summary(model_12)$r.squared, 4)
+mae_12 <- round(MLmetrics::MAE(y_pred_12, y_true_12), 4)
+mape_12 <- round(MLmetrics::MAPE(y_pred_12, y_true_12), 4)
+
+paste("R-Squared:", r_sq_12)
+paste("MAE - Mean Absolute Error:", mae_12)
+paste("MAPE - Mean Absolute Percentage Error:", mape_12)
+
+eval_filing[12,] <- c(12, r_sq_12, mae_12, mape_12)
+
+```
+
+### Model 13
+
+```{r}
+
+model_13 <- lm(
+  data = train,
+  formula = dispo_time_filing ~ 
+    age + gender + crime_hist + serious_cat + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
+)
+summary(model_13)
+result_13 <- tidy(model_13)
+y_pred_13 <- predict.lm(model_13, test)
+y_true_13 <- test$dispo_time_filing
+
+r_sq_13 <- round(summary(model_13)$r.squared, 4)
+mae_13 <- round(MLmetrics::MAE(y_pred_13, y_true_13), 4)
+mape_13 <- round(MLmetrics::MAPE(y_pred_13, y_true_13), 4)
+
+paste("R-Squared:", r_sq_13)
+paste("MAE - Mean Absolute Error:", mae_13)
+paste("MAPE - Mean Absolute Percentage Error:", mape_13)
+
+eval_filing[13,] <- c(13, r_sq_13, mae_13, mape_13)
+
+```
+
+### Model 14
+
+```{r}
+
+model_14 <- lm(
+  data = train,
+  formula = dispo_time_filing ~ 
+    age + gender + crime_hist + class_a + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
+)
+summary(model_14)
+result_14 <- tidy(model_14)
+y_pred_14 <- predict.lm(model_14, test)
+y_true_14 <- test$dispo_time_filing
+
+r_sq_14 <- round(summary(model_14)$r.squared, 4)
+mae_14 <- round(MLmetrics::MAE(y_pred_14, y_true_14), 4)
+mape_14 <- round(MLmetrics::MAPE(y_pred_14, y_true_14), 4)
+
+paste("R-Squared:", r_sq_14)
+paste("MAE - Mean Absolute Error:", mae_14)
+paste("MAPE - Mean Absolute Percentage Error:", mape_14)
+
+eval_filing[14,] <- c(14, r_sq_14, mae_14, mape_14)
+
+```
+
+### Model 15
+
+```{r}
+
+model_15 <- lm(
+  data = train,
+  formula = dispo_time_filing ~ 
+    age + gender + crime_hist + is_felony + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
+)
+summary(model_15)
+result_15 <- tidy(model_15)
+y_pred_15 <- predict.lm(model_15, test)
+y_true_15 <- test$dispo_time_filing
+
+r_sq_15 <- round(summary(model_15)$r.squared, 4)
+mae_15 <- round(MLmetrics::MAE(y_pred_15, y_true_15), 4)
+mape_15 <- round(MLmetrics::MAPE(y_pred_15, y_true_15), 4)
+
+paste("R-Squared:", r_sq_15)
+paste("MAE - Mean Absolute Error:", mae_15)
+paste("MAPE - Mean Absolute Percentage Error:", mape_15)
+
+eval_filing[15,] <- c(15, r_sq_15, mae_15, mape_15)
+
+```
+
+### Model 16
+
+```{r}
+
+model_16 <- lm(
+  data = train,
+  formula = dispo_time_filing ~ 
+    age_group + gender + crime_hist + charge_class + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
+)
+summary(model_16)
+result_16 <- tidy(model_16)
+y_pred_16 <- predict.lm(model_16, test)
+y_true_16 <- test$dispo_time_filing
+
+r_sq_16 <- round(summary(model_16)$r.squared, 4)
+mae_16 <- round(MLmetrics::MAE(y_pred_16, y_true_16), 4)
+mape_16 <- round(MLmetrics::MAPE(y_pred_16, y_true_16), 4)
+
+paste("R-Squared:", r_sq_16)
+paste("MAE - Mean Absolute Error:", mae_16)
+paste("MAPE - Mean Absolute Percentage Error:", mape_16)
+
+eval_filing[16,] <- c(16, r_sq_16, mae_16, mape_16)
+
+```
+
+### Model 17
+
+```{r}
+
+model_17 <- lm(
+  data = train,
+  formula = dispo_time_filing ~ 
+    age_group + gender + crime_hist + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
+)
+summary(model_17)
+result_17 <- tidy(model_17)
+y_pred_17 <- predict.lm(model_17, test)
+y_true_17 <- test$dispo_time_filing
+
+r_sq_17 <- round(summary(model_17)$r.squared, 4)
+mae_17 <- round(MLmetrics::MAE(y_pred_17, y_true_17), 4)
+mape_17 <- round(MLmetrics::MAPE(y_pred_17, y_true_17), 4)
+
+paste("R-Squared:", r_sq_17)
+paste("MAE - Mean Absolute Error:", mae_17)
+paste("MAPE - Mean Absolute Percentage Error:", mape_17)
+
+eval_filing[17,] <- c(17, r_sq_17, mae_17, mape_17)
+
+```
+
+### Model 18
+
+```{r}
+
+model_18 <- lm(
+  data = train,
+  formula = dispo_time_filing ~ 
+    age_group + gender + crime_hist + serious_cat + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
+)
+summary(model_18)
+result_18 <- tidy(model_18)
+y_pred_18 <- predict.lm(model_18, test)
+y_true_18 <- test$dispo_time_filing
+
+r_sq_18 <- round(summary(model_18)$r.squared, 4)
+mae_18 <- round(MLmetrics::MAE(y_pred_18, y_true_18), 4)
+mape_18 <- round(MLmetrics::MAPE(y_pred_18, y_true_18), 4)
+
+paste("R-Squared:", r_sq_18)
+paste("MAE - Mean Absolute Error:", mae_18)
+paste("MAPE - Mean Absolute Percentage Error:", mape_18)
+
+eval_filing[18,] <- c(18, r_sq_18, mae_18, mape_18)
+
+```
+
+### Model 19
+
+```{r}
+
+model_19 <- lm(
+  data = train,
+  formula = dispo_time_filing ~ 
+    age_group + gender + crime_hist + class_a + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
+)
+summary(model_19)
+result_19 <- tidy(model_19)
+y_pred_19 <- predict.lm(model_19, test)
+y_true_19 <- test$dispo_time_filing
+
+r_sq_19 <- round(summary(model_19)$r.squared, 4)
+mae_19 <- round(MLmetrics::MAE(y_pred_19, y_true_19), 4)
+mape_19 <- round(MLmetrics::MAPE(y_pred_19, y_true_19), 4)
+
+paste("R-Squared:", r_sq_19)
+paste("MAE - Mean Absolute Error:", mae_19)
+paste("MAPE - Mean Absolute Percentage Error:", mape_19)
+
+eval_filing[19,] <- c(19, r_sq_19, mae_19, mape_19)
+
+```
+
+### Model 20
+
+```{r}
+
+model_20 <- lm(
+  data = train,
+  formula = dispo_time_filing ~ 
+    age_group + gender + crime_hist + is_felony + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
+)
+summary(model_20)
+result_20 <- tidy(model_20)
+y_pred_20 <- predict.lm(model_20, test)
+y_true_20 <- test$dispo_time_filing
+
+r_sq_20 <- round(summary(model_20)$r.squared, 4)
+mae_20 <- round(MLmetrics::MAE(y_pred_20, y_true_20), 4)
+mape_20 <- round(MLmetrics::MAPE(y_pred_20, y_true_20), 4)
+
+paste("R-Squared:", r_sq_20)
+paste("MAE - Mean Absolute Error:", mae_20)
+paste("MAPE - Mean Absolute Percentage Error:", mape_20)
+
+eval_filing[20,] <- c(20, r_sq_20, mae_20, mape_20)
 
 ```
 
 ### Conclusions
 
-+ Model with the lowest MAE or MAPE: Model 1
-    + All other models have similar levels of MAE or MAPE
-+ R-squared is also highest for Model 1
-    + All other models have similar levels of R-squared
-+ 
+```{r}
+eval_filing
+```
 
-## Model Selection - based on filing date
+RRR
+
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXx
+
+## Model Selection - based on arraignment date
+
+Initialize data frame to record key metrics
+
+```{r}
+eval_arraign <- data.frame(model_nbr = numeric(), r_squared = numeric(), mae = numeric(), mape = numeric())
+```
 
 ### Model 1
 
-This model is our base model and includes the following variables
-
-+ age_group 
-+ gender 
-+ crime_hist (whether there is previous criminal history)
-+ charge_class
-+ seriousness (based on category)
-+ defendant_status (custody status)
-+ total_dfa (no of times defendant failed to appear)
-+ drug_court (whether the case went to drug court)
-+ is_competency_hearing (whether there was a competency hearing or not)
-
 ```{r}
 
-model_a_1 <- lm(
+model_1 <- lm(
   data = train,
   formula = dispo_time_arraign ~ 
-    age_group + gender + crime_hist + charge_class + serious_cat + defendant_status + total_dfa + drug_court + is_competency_hearing
+    age + gender + crime_hist + charge_class + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
 )
-summary(model_a_1)
-result_a_1 <- tidy(model_a_1)
+summary(model_1)
+result_1 <- tidy(model_1)
+y_pred_1 <- predict.lm(model_1, test)
+y_true_1 <- test$dispo_time_arraign
 
-y_pred_a_1 <- predict.lm(model_a_1, test)
-y_true_a_1 <- test$dispo_time_arraign
+r_sq_1 <- round(summary(model_1)$r.squared, 4)
+mae_1 <- round(MLmetrics::MAE(y_pred_1, y_true_1), 4)
+mape_1 <- round(MLmetrics::MAPE(y_pred_1, y_true_1), 4)
 
-paste("MAE - Mean Absolute Error:", round(MLmetrics::MAE(y_pred_a_1, y_true_a_1), 4))
-paste("MSE - Mean Squared Error:", round(MLmetrics::MSE(y_pred_a_1, y_true_a_1), 4))
+paste("R-Squared:", r_sq_1)
+paste("MAE - Mean Absolute Error:", mae_1)
+paste("MAPE - Mean Absolute Percentage Error:", mape_1)
+
+eval_arraign[1,] <- c(1, r_sq_1, mae_1, mape_1)
 
 ```
 
 ### Model 2
 
-Replace the original charge class with an identifier based on whether they were Class A charges (for most serious crimes) or not
-
 ```{r}
 
-model_a_2 <- lm(
+model_2 <- lm(
   data = train,
   formula = dispo_time_arraign ~ 
-    age_group + gender + crime_hist + class_a + serious_cat + defendant_status + total_dfa + drug_court + is_competency_hearing
+    age + gender + crime_hist + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
 )
-summary(model_a_2)
-result_a_2 <- tidy(model_a_2)
+summary(model_2)
+result_2 <- tidy(model_2)
+y_pred_2 <- predict.lm(model_2, test)
+y_true_2 <- test$dispo_time_arraign
 
-y_pred_a_2 <- predict.lm(model_a_2, test)
-y_true_a_2 <- test$dispo_time_arraign
+r_sq_2 <- round(summary(model_2)$r.squared, 4)
+mae_2 <- round(MLmetrics::MAE(y_pred_2, y_true_2), 4)
+mape_2 <- round(MLmetrics::MAPE(y_pred_2, y_true_2), 4)
 
-paste("MAE - Mean Absolute Error:", round(MLmetrics::MAE(y_pred_a_2, y_true_a_2), 4))
-paste("MSE - Mean Squared Error:", round(MLmetrics::MSE(y_pred_a_2, y_true_a_2), 4))
+paste("R-Squared:", r_sq_2)
+paste("MAE - Mean Absolute Error:", mae_2)
+paste("MAPE - Mean Absolute Percentage Error:", mape_2)
+
+eval_arraign[2,] <- c(2, r_sq_2, mae_2, mape_2)
 
 ```
 
 ### Model 3
 
-We replace seriousness categorical measurement with original seriousness value
-
 ```{r}
 
-model_a_3 <- lm(
+model_3 <- lm(
   data = train,
   formula = dispo_time_arraign ~ 
-    age_group + gender + crime_hist + class_a + seriousness + defendant_status + total_dfa + drug_court + is_competency_hearing
+    age + gender + crime_hist + serious_cat + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
 )
-summary(model_a_3)
-result_a_3 <- tidy(model_a_3)
+summary(model_3)
+result_3 <- tidy(model_3)
+y_pred_3 <- predict.lm(model_3, test)
+y_true_3 <- test$dispo_time_arraign
 
-y_pred_a_3 <- predict.lm(model_a_3, test)
-y_true_a_3 <- test$dispo_time_arraign
+r_sq_3 <- round(summary(model_3)$r.squared, 4)
+mae_3 <- round(MLmetrics::MAE(y_pred_3, y_true_3), 4)
+mape_3 <- round(MLmetrics::MAPE(y_pred_3, y_true_3), 4)
 
-paste("MAE - Mean Absolute Error:", round(MLmetrics::MAE(y_pred_a_3, y_true_a_3), 4))
-paste("MSE - Mean Squared Error:", round(MLmetrics::MSE(y_pred_a_3, y_true_a_3), 4))
+paste("R-Squared:", r_sq_3)
+paste("MAE - Mean Absolute Error:", mae_3)
+paste("MAPE - Mean Absolute Percentage Error:", mape_3)
+
+eval_arraign[3,] <- c(3, r_sq_3, mae_3, mape_3)
 
 ```
 
 ### Model 4
 
-We include interaction variables:
+```{r}
 
-+ number of DFAs AND charge class
-+ age group AND drug case
+model_4 <- lm(
+  data = train,
+  formula = dispo_time_arraign ~ 
+    age + gender + crime_hist + class_a + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+)
+summary(model_4)
+result_4 <- tidy(model_4)
+y_pred_4 <- predict.lm(model_4, test)
+y_true_4 <- test$dispo_time_arraign
+
+r_sq_4 <- round(summary(model_4)$r.squared, 4)
+mae_4 <- round(MLmetrics::MAE(y_pred_4, y_true_4), 4)
+mape_4 <- round(MLmetrics::MAPE(y_pred_4, y_true_4), 4)
+
+paste("R-Squared:", r_sq_4)
+paste("MAE - Mean Absolute Error:", mae_4)
+paste("MAPE - Mean Absolute Percentage Error:", mape_4)
+
+eval_arraign[4,] <- c(4, r_sq_4, mae_4, mape_4)
+
+```
+
+### Model 5
 
 ```{r}
 
-model_a_4 <- lm(
+model_5 <- lm(
   data = train,
   formula = dispo_time_arraign ~ 
-    gender + crime_hist + serious_cat + total_dfa + is_competency_hearing + defendant_status * class_a + age_group * drug_court
+    age + gender + crime_hist + is_felony + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
 )
-summary(model_a_4)
-result_a_4 <- tidy(model_a_4)
+summary(model_5)
+result_5 <- tidy(model_5)
+y_pred_5 <- predict.lm(model_5, test)
+y_true_5 <- test$dispo_time_arraign
 
-y_pred_a_4 <- predict.lm(model_a_4, test)
-y_true_a_4 <- test$dispo_time_arraign
+r_sq_5 <- round(summary(model_5)$r.squared, 4)
+mae_5 <- round(MLmetrics::MAE(y_pred_5, y_true_5), 4)
+mape_5 <- round(MLmetrics::MAPE(y_pred_5, y_true_5), 4)
 
-paste("MAE - Mean Absolute Error:", round(MLmetrics::MAE(y_pred_a_4, y_true_a_4), 4))
-paste("MSE - Mean Squared Error:", round(MLmetrics::MSE(y_pred_a_4, y_true_a_4), 4))
+paste("R-Squared:", r_sq_5)
+paste("MAE - Mean Absolute Error:", mae_5)
+paste("MAPE - Mean Absolute Percentage Error:", mape_5)
+
+eval_arraign[5,] <- c(5, r_sq_5, mae_5, mape_5)
+
+```
+
+### Model 6
+
+```{r}
+
+model_6 <- lm(
+  data = train,
+  formula = dispo_time_arraign ~ 
+    age_group + gender + crime_hist + charge_class + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+)
+summary(model_6)
+result_6 <- tidy(model_6)
+y_pred_6 <- predict.lm(model_6, test)
+y_true_6 <- test$dispo_time_arraign
+
+r_sq_6 <- round(summary(model_6)$r.squared, 4)
+mae_6 <- round(MLmetrics::MAE(y_pred_6, y_true_6), 4)
+mape_6 <- round(MLmetrics::MAPE(y_pred_6, y_true_6), 4)
+
+paste("R-Squared:", r_sq_6)
+paste("MAE - Mean Absolute Error:", mae_6)
+paste("MAPE - Mean Absolute Percentage Error:", mape_6)
+
+eval_arraign[6,] <- c(6, r_sq_6, mae_6, mape_6)
+
+```
+
+### Model 7
+
+```{r}
+
+model_7 <- lm(
+  data = train,
+  formula = dispo_time_arraign ~ 
+    age_group + gender + crime_hist + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+)
+summary(model_7)
+result_7 <- tidy(model_7)
+y_pred_7 <- predict.lm(model_7, test)
+y_true_7 <- test$dispo_time_arraign
+
+r_sq_7 <- round(summary(model_7)$r.squared, 4)
+mae_7 <- round(MLmetrics::MAE(y_pred_7, y_true_7), 4)
+mape_7 <- round(MLmetrics::MAPE(y_pred_7, y_true_7), 4)
+
+paste("R-Squared:", r_sq_7)
+paste("MAE - Mean Absolute Error:", mae_7)
+paste("MAPE - Mean Absolute Percentage Error:", mape_7)
+
+eval_arraign[7,] <- c(7, r_sq_7, mae_7, mape_7)
+
+```
+
+### Model 8
+
+```{r}
+
+model_8 <- lm(
+  data = train,
+  formula = dispo_time_arraign ~ 
+    age_group + gender + crime_hist + serious_cat + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+)
+summary(model_8)
+result_8 <- tidy(model_8)
+y_pred_8 <- predict.lm(model_8, test)
+y_true_8 <- test$dispo_time_arraign
+
+r_sq_8 <- round(summary(model_8)$r.squared, 4)
+mae_8 <- round(MLmetrics::MAE(y_pred_8, y_true_8), 4)
+mape_8 <- round(MLmetrics::MAPE(y_pred_8, y_true_8), 4)
+
+paste("R-Squared:", r_sq_8)
+paste("MAE - Mean Absolute Error:", mae_8)
+paste("MAPE - Mean Absolute Percentage Error:", mape_8)
+
+eval_arraign[8,] <- c(8, r_sq_8, mae_8, mape_8)
+
+```
+
+### Model 9
+
+```{r}
+
+model_9 <- lm(
+  data = train,
+  formula = dispo_time_arraign ~ 
+    age_group + gender + crime_hist + class_a + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+)
+summary(model_9)
+result_9 <- tidy(model_9)
+y_pred_9 <- predict.lm(model_9, test)
+y_true_9 <- test$dispo_time_arraign
+
+r_sq_9 <- round(summary(model_9)$r.squared, 4)
+mae_9 <- round(MLmetrics::MAE(y_pred_9, y_true_9), 4)
+mape_9 <- round(MLmetrics::MAPE(y_pred_9, y_true_9), 4)
+
+paste("R-Squared:", r_sq_9)
+paste("MAE - Mean Absolute Error:", mae_9)
+paste("MAPE - Mean Absolute Percentage Error:", mape_9)
+
+eval_arraign[9,] <- c(9, r_sq_9, mae_9, mape_9)
+
+```
+
+### Model 10
+
+```{r}
+
+model_10 <- lm(
+  data = train,
+  formula = dispo_time_arraign ~ 
+    age_group + gender + crime_hist + is_felony + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+)
+summary(model_10)
+result_10 <- tidy(model_10)
+y_pred_10 <- predict.lm(model_10, test)
+y_true_10 <- test$dispo_time_arraign
+
+r_sq_10 <- round(summary(model_10)$r.squared, 4)
+mae_10 <- round(MLmetrics::MAE(y_pred_10, y_true_10), 4)
+mape_10 <- round(MLmetrics::MAPE(y_pred_10, y_true_10), 4)
+
+paste("R-Squared:", r_sq_10)
+paste("MAE - Mean Absolute Error:", mae_10)
+paste("MAPE - Mean Absolute Percentage Error:", mape_10)
+
+eval_arraign[10,] <- c(10, r_sq_10, mae_10, mape_10)
+
+```
+
+### Model 11
+
+```{r}
+
+model_11 <- lm(
+  data = train,
+  formula = dispo_time_arraign ~ 
+    age + gender + crime_hist + charge_class + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
+)
+summary(model_11)
+result_11 <- tidy(model_11)
+y_pred_11 <- predict.lm(model_11, test)
+y_true_11 <- test$dispo_time_arraign
+
+r_sq_11 <- round(summary(model_11)$r.squared, 4)
+mae_11 <- round(MLmetrics::MAE(y_pred_11, y_true_11), 4)
+mape_11 <- round(MLmetrics::MAPE(y_pred_11, y_true_11), 4)
+
+paste("R-Squared:", r_sq_11)
+paste("MAE - Mean Absolute Error:", mae_11)
+paste("MAPE - Mean Absolute Percentage Error:", mape_11)
+
+eval_arraign[11,] <- c(11, r_sq_11, mae_11, mape_11)
+
+```
+
+### Model 12
+
+```{r}
+
+model_12 <- lm(
+  data = train,
+  formula = dispo_time_arraign ~ 
+    age + gender + crime_hist + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
+)
+summary(model_12)
+result_12 <- tidy(model_12)
+y_pred_12 <- predict.lm(model_12, test)
+y_true_12 <- test$dispo_time_arraign
+
+r_sq_12 <- round(summary(model_12)$r.squared, 4)
+mae_12 <- round(MLmetrics::MAE(y_pred_12, y_true_12), 4)
+mape_12 <- round(MLmetrics::MAPE(y_pred_12, y_true_12), 4)
+
+paste("R-Squared:", r_sq_12)
+paste("MAE - Mean Absolute Error:", mae_12)
+paste("MAPE - Mean Absolute Percentage Error:", mape_12)
+
+eval_arraign[12,] <- c(12, r_sq_12, mae_12, mape_12)
+
+```
+
+### Model 13
+
+```{r}
+
+model_13 <- lm(
+  data = train,
+  formula = dispo_time_arraign ~ 
+    age + gender + crime_hist + serious_cat + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
+)
+summary(model_13)
+result_13 <- tidy(model_13)
+y_pred_13 <- predict.lm(model_13, test)
+y_true_13 <- test$dispo_time_arraign
+
+r_sq_13 <- round(summary(model_13)$r.squared, 4)
+mae_13 <- round(MLmetrics::MAE(y_pred_13, y_true_13), 4)
+mape_13 <- round(MLmetrics::MAPE(y_pred_13, y_true_13), 4)
+
+paste("R-Squared:", r_sq_13)
+paste("MAE - Mean Absolute Error:", mae_13)
+paste("MAPE - Mean Absolute Percentage Error:", mape_13)
+
+eval_arraign[13,] <- c(13, r_sq_13, mae_13, mape_13)
+
+```
+
+### Model 14
+
+```{r}
+
+model_14 <- lm(
+  data = train,
+  formula = dispo_time_arraign ~ 
+    age + gender + crime_hist + class_a + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
+)
+summary(model_14)
+result_14 <- tidy(model_14)
+y_pred_14 <- predict.lm(model_14, test)
+y_true_14 <- test$dispo_time_arraign
+
+r_sq_14 <- round(summary(model_14)$r.squared, 4)
+mae_14 <- round(MLmetrics::MAE(y_pred_14, y_true_14), 4)
+mape_14 <- round(MLmetrics::MAPE(y_pred_14, y_true_14), 4)
+
+paste("R-Squared:", r_sq_14)
+paste("MAE - Mean Absolute Error:", mae_14)
+paste("MAPE - Mean Absolute Percentage Error:", mape_14)
+
+eval_arraign[14,] <- c(14, r_sq_14, mae_14, mape_14)
+
+```
+
+### Model 15
+
+```{r}
+
+model_15 <- lm(
+  data = train,
+  formula = dispo_time_arraign ~ 
+    age + gender + crime_hist + is_felony + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
+)
+summary(model_15)
+result_15 <- tidy(model_15)
+y_pred_15 <- predict.lm(model_15, test)
+y_true_15 <- test$dispo_time_arraign
+
+r_sq_15 <- round(summary(model_15)$r.squared, 4)
+mae_15 <- round(MLmetrics::MAE(y_pred_15, y_true_15), 4)
+mape_15 <- round(MLmetrics::MAPE(y_pred_15, y_true_15), 4)
+
+paste("R-Squared:", r_sq_15)
+paste("MAE - Mean Absolute Error:", mae_15)
+paste("MAPE - Mean Absolute Percentage Error:", mape_15)
+
+eval_arraign[15,] <- c(15, r_sq_15, mae_15, mape_15)
+
+```
+
+### Model 16
+
+```{r}
+
+model_16 <- lm(
+  data = train,
+  formula = dispo_time_arraign ~ 
+    age_group + gender + crime_hist + charge_class + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
+)
+summary(model_16)
+result_16 <- tidy(model_16)
+y_pred_16 <- predict.lm(model_16, test)
+y_true_16 <- test$dispo_time_arraign
+
+r_sq_16 <- round(summary(model_16)$r.squared, 4)
+mae_16 <- round(MLmetrics::MAE(y_pred_16, y_true_16), 4)
+mape_16 <- round(MLmetrics::MAPE(y_pred_16, y_true_16), 4)
+
+paste("R-Squared:", r_sq_16)
+paste("MAE - Mean Absolute Error:", mae_16)
+paste("MAPE - Mean Absolute Percentage Error:", mape_16)
+
+eval_arraign[16,] <- c(16, r_sq_16, mae_16, mape_16)
+
+```
+
+### Model 17
+
+```{r}
+
+model_17 <- lm(
+  data = train,
+  formula = dispo_time_arraign ~ 
+    age_group + gender + crime_hist + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
+)
+summary(model_17)
+result_17 <- tidy(model_17)
+y_pred_17 <- predict.lm(model_17, test)
+y_true_17 <- test$dispo_time_arraign
+
+r_sq_17 <- round(summary(model_17)$r.squared, 4)
+mae_17 <- round(MLmetrics::MAE(y_pred_17, y_true_17), 4)
+mape_17 <- round(MLmetrics::MAPE(y_pred_17, y_true_17), 4)
+
+paste("R-Squared:", r_sq_17)
+paste("MAE - Mean Absolute Error:", mae_17)
+paste("MAPE - Mean Absolute Percentage Error:", mape_17)
+
+eval_arraign[17,] <- c(17, r_sq_17, mae_17, mape_17)
+
+```
+
+### Model 18
+
+```{r}
+
+model_18 <- lm(
+  data = train,
+  formula = dispo_time_arraign ~ 
+    age_group + gender + crime_hist + serious_cat + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
+)
+summary(model_18)
+result_18 <- tidy(model_18)
+y_pred_18 <- predict.lm(model_18, test)
+y_true_18 <- test$dispo_time_arraign
+
+r_sq_18 <- round(summary(model_18)$r.squared, 4)
+mae_18 <- round(MLmetrics::MAE(y_pred_18, y_true_18), 4)
+mape_18 <- round(MLmetrics::MAPE(y_pred_18, y_true_18), 4)
+
+paste("R-Squared:", r_sq_18)
+paste("MAE - Mean Absolute Error:", mae_18)
+paste("MAPE - Mean Absolute Percentage Error:", mape_18)
+
+eval_arraign[18,] <- c(18, r_sq_18, mae_18, mape_18)
+
+```
+
+### Model 19
+
+```{r}
+
+model_19 <- lm(
+  data = train,
+  formula = dispo_time_arraign ~ 
+    age_group + gender + crime_hist + class_a + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
+)
+summary(model_19)
+result_19 <- tidy(model_19)
+y_pred_19 <- predict.lm(model_19, test)
+y_true_19 <- test$dispo_time_arraign
+
+r_sq_19 <- round(summary(model_19)$r.squared, 4)
+mae_19 <- round(MLmetrics::MAE(y_pred_19, y_true_19), 4)
+mape_19 <- round(MLmetrics::MAPE(y_pred_19, y_true_19), 4)
+
+paste("R-Squared:", r_sq_19)
+paste("MAE - Mean Absolute Error:", mae_19)
+paste("MAPE - Mean Absolute Percentage Error:", mape_19)
+
+eval_arraign[19,] <- c(19, r_sq_19, mae_19, mape_19)
+
+```
+
+### Model 20
+
+```{r}
+
+model_20 <- lm(
+  data = train,
+  formula = dispo_time_arraign ~ 
+    age_group + gender + crime_hist + is_felony + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
+)
+summary(model_20)
+result_20 <- tidy(model_20)
+y_pred_20 <- predict.lm(model_20, test)
+y_true_20 <- test$dispo_time_arraign
+
+r_sq_20 <- round(summary(model_20)$r.squared, 4)
+mae_20 <- round(MLmetrics::MAE(y_pred_20, y_true_20), 4)
+mape_20 <- round(MLmetrics::MAPE(y_pred_20, y_true_20), 4)
+
+paste("R-Squared:", r_sq_20)
+paste("MAE - Mean Absolute Error:", mae_20)
+paste("MAPE - Mean Absolute Percentage Error:", mape_20)
+
+eval_arraign[20,] <- c(20, r_sq_20, mae_20, mape_20)
 
 ```
 
 ### Conclusions
 
-+ Model 1 has the lowest MAE and MAPE and has the highest R-squared
+```{r}
+eval_arraign
+```
+
+RRR
 
