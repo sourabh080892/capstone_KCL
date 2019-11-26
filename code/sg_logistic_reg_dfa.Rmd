@@ -162,7 +162,7 @@ anova(dfa_logistic, test="Chisq")
 test$dfa_prob <- predict(dfa_logistic, newdata = test, type = "response")
 ```
 
-## DIfferent Thresholds
+## DIfferent Thresholds with Confusion Matrix and other Stats
 
 ## 0.4
 
