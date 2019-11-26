@@ -325,9 +325,15 @@ D23_dispo_key <- D23_dispo_key %>%
       str_detect(tolower(description), "guilty") ~ "guilty",
       str_detect(tolower(description), "acquit") ~ "acquitted",
       TRUE ~ "other"
+    ),
+    dispo_type = case_when(
+      str_detect(tolower(type), "trial")     ~ "trial",
+      str_detect(tolower(type), "plea")      ~ "plea",
+      str_detect(tolower(type), "dismissal") ~ "dismissal",
+      TRUE ~ "dismissal"
     )
   ) %>% 
-  mutate_at(c("verdict"), factor)
+  mutate_at(c("verdict", "dispo_type"), factor)
 
 # delete records where ranking is 5
 D23_dispo_key <- D23_dispo_key %>%
@@ -489,6 +495,9 @@ drug_case_desc$drug_case <- ifelse(grepl("Violation of the Uniform Controlled Su
 drug_case_desc <- drug_case_desc[drug_case_desc$drug_case == 'yes', ] %>%
                     select(c(file_number))
 
+# join 'represent_charge_by_file' and 'D23_dispo_key' to get type of disposition (Trail, Plea, Dismissal)
+represent_charge_by_file <- left_join(represent_charge_by_file, D23_dispo_key, by = c("disposition_code"))
+
 # arrange/sort records as File_number-ASC, Class-DESC, Seriousness-DESC, Violent-DESC
 represent_charge_by_file <- represent_charge_by_file %>%
                               group_by(file_number) %>% 
@@ -496,8 +505,8 @@ represent_charge_by_file <- represent_charge_by_file %>%
                                     desc(seriousness), desc(is_violent)) %>%
                               slice(1) %>%
                               ungroup()  %>%
-                              select(-c(offense_start_date, offense_end_date, filing_date,
-                                        disposition_date, disposition_code, charge_enhanced, description))
+                              select(-c(offense_start_date, offense_end_date, filing_date, disposition_date, disposition_code,
+                                        charge_enhanced, description.x, description.y, ranking, type, verdict))
 
 ```
 
@@ -633,7 +642,7 @@ dfa_by_category$compt_case <- ifelse(is.na(match(dfa_by_category$file_number, co
 # export dfa_by_category to csv for powerbi
 write.csv(dfa_by_category, '../calculated_data/dfa_by_category_eda.csv')
 
-# summary(dfa_by_category)
+summary(dfa_by_category)
 # summary(D11_filed_cases)
 ```
 
@@ -740,7 +749,7 @@ dispo_time_dispo_rank <- merge(x = file_last_arr, y = D23_dispo_key, by = "dispo
                             slice(1) %>%
                             ungroup() %>% 
                           select(c(file_number, filing_date, disposition_date, charge_enhanced, charge_code, last_arr_date, 
-                                   total_dispo_date, dispo_time_filing, dispo_time_arraign, disposition_code, ranking, type))
+                                   total_dispo_date, dispo_time_filing, dispo_time_arraign, disposition_code, ranking))
 
 rm(file_last_arr)
 
@@ -760,7 +769,7 @@ dispo_by_category <- merge(x = dispo_time_dispo_rank, y = dfa_by_category, by = 
                                    seriousness))
 
 # # export dfa_by_category to csv
-# write.csv(dispo_by_category, '../calculated_data/dispo_by_category.csv')
+write.csv(dispo_by_category, '../calculated_data/dispo_by_category.csv')
 ```
 
 
@@ -774,7 +783,7 @@ ggplot(dispo_by_category,aes(x=dispo_time_filing)) +
 
 # age group
 summaryBy(dispo_time_filing ~ age_group, data = dispo_by_category, 
-          FUN = list(mean, max, min, median))
+          FUN = list(mean, max, min, median), na.rm=TRUE)
 #-----------------------------------------------------
 
 # disposition time comparing filing date for gender
@@ -784,7 +793,7 @@ ggplot(dispo_by_category,aes(x=dispo_time_filing)) +
 
 # gender
 summaryBy(dispo_time_filing ~ gender, data = dispo_by_category, 
-          FUN = list(mean, max, min, median))
+          FUN = list(mean, max, min, median), na.rm=TRUE)
 #-----------------------------------------------------
 
 # disposition time comparing filing date for Criminal History
@@ -794,7 +803,7 @@ ggplot(dispo_by_category,aes(x=dispo_time_filing)) +
 
 # crime_hist
 summaryBy(dispo_time_filing ~ crime_hist, data = dispo_by_category, 
-          FUN = list(mean, max, min, median))
+          FUN = list(mean, max, min, median), na.rm=TRUE)
 #-----------------------------------------------------
 
 # disposition time comparing filing date for venue
@@ -804,7 +813,7 @@ ggplot(dispo_by_category,aes(x=dispo_time_filing)) +
 
 # venue
 summaryBy(dispo_time_filing ~ venue, data = dispo_by_category, 
-          FUN = list(mean, max, min, median))
+          FUN = list(mean, max, min, median), na.rm=TRUE)
 #-----------------------------------------------------
 
 # disposition time comparing filing date for Charge class
@@ -814,7 +823,7 @@ ggplot(dispo_by_category,aes(x=dispo_time_filing)) +
 
 # class
 summaryBy(dispo_time_filing ~ class, data = dispo_by_category, 
-          FUN = list(mean, max, min, median))
+          FUN = list(mean, max, min, median), na.rm=TRUE)
 #-----------------------------------------------------
 
 # disposition time comparing filing date for Seriousness
@@ -824,7 +833,7 @@ ggplot(dispo_by_category,aes(x=dispo_time_filing)) +
 
 # serious_cat
 summaryBy(dispo_time_filing ~ serious_cat, data = dispo_by_category, 
-          FUN = list(mean, max, min, median))
+          FUN = list(mean, max, min, median), na.rm=TRUE)
 #-----------------------------------------------------
 
 # disposition time comparing filing date for Custody Status
@@ -834,17 +843,17 @@ ggplot(dispo_by_category,aes(x=dispo_time_filing)) +
 
 # defendant_status
 summaryBy(dispo_time_filing ~ defendant_status, data = dispo_by_category, 
-          FUN = list(mean, max, min, median))
+          FUN = list(mean, max, min, median), na.rm=TRUE)
 #-----------------------------------------------------
 
 # disposition time comparing filing date for Drug Cases
 ggplot(dispo_by_category,aes(x=dispo_time_filing)) +
   geom_histogram()  + 
-    xlim(c(-200,1200)) + facet_grid(~drug_court) + ggtitle("Drug Cases")
+    xlim(c(-200,1200)) + facet_grid(~drug_case) + ggtitle("Drug Cases")
 
 # drug_court
-summaryBy(dispo_time_filing ~ drug_court, data = dispo_by_category, 
-          FUN = list(mean, max, min, median))
+summaryBy(dispo_time_filing ~ drug_case, data = dispo_by_category, 
+          FUN = list(mean, max, min, median), na.rm=TRUE)
 #-----------------------------------------------------
 ```
 
@@ -924,10 +933,10 @@ summaryBy(dispo_time_arraign ~ defendant_status, data = dispo_by_category,
 # disposition time comparing last arraignment date for Drug Cases
 ggplot(dispo_by_category,aes(x=dispo_time_arraign)) +
   geom_histogram()  + 
-    xlim(c(-200,1200)) + facet_grid(~drug_court) + ggtitle("Drug Cases")
+    xlim(c(-200,1200)) + facet_grid(~drug_case) + ggtitle("Drug Cases")
 
 # drug_court
-summaryBy(dispo_time_arraign ~ drug_court, data = dispo_by_category, 
+summaryBy(dispo_time_arraign ~ drug_case, data = dispo_by_category, 
           FUN = list(mean, max, min, median), na.rm=TRUE)
 #-----------------------------------------------------
 ```
@@ -965,7 +974,7 @@ ggplot(dispo_by_category, aes(x=total_dfa, y=dispo_time_filing)) +
 
 ggplot(dispo_by_category, aes(x=total_dfa, y=dispo_time_filing)) +
   geom_point(stat = "summary", fun.y = "mean") +
-  facet_grid(~drug_court) + ggtitle("Drug Cases")
+  facet_grid(~drug_case) + ggtitle("Drug Cases")
 ```
 
 
@@ -1000,7 +1009,7 @@ ggplot(dispo_by_category, aes(x=total_dfa, y=dispo_time_arraign)) +
 
 ggplot(dispo_by_category, aes(x=total_dfa, y=dispo_time_arraign)) +
   geom_point(stat = "summary", fun.y = "mean") +
-  facet_grid(~drug_court) + ggtitle("Drug Cases")
+  facet_grid(~drug_case) + ggtitle("Drug Cases")
 ```
 
 
