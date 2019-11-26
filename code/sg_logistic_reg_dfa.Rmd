@@ -1,5 +1,5 @@
 ---
-title: "BUAN 5510 - Capstone Project - EDA"
+title: "BUAN 5510 - Capstone - Logistic Reg -> DFA"
 author: "Keith Castelino and Sourabh Gupta"
 date: "`r format(Sys.time(), '%B %d, %Y')`"
 output:
