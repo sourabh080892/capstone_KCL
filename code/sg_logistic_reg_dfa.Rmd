@@ -68,6 +68,8 @@ library(caTools)
 
 ```
 
+## Summary of Dataset being used
+
 ```{r}
 #loading data
 #
@@ -118,6 +120,8 @@ is.factor(dfa_by_category$age)
 
 ```
 
+## Split dataset into Train and Test
+
 ```{r}
 # Split the dataset into train and test
 set.seed(123)   #  set seed to ensure you always have same random numbers generated
@@ -130,12 +134,16 @@ test  =subset(dfa_by_category, sample ==FALSE)
 
 ```
 
+## Building Logistic model
+
 ```{r}
 # build model for DFA
 # we will use GLM function with argument family = binomial
 dfa_logistic <- glm(dfa ~ ., data = train, family = binomial(link="logit"))
 summary(dfa_logistic)
 ```
+
+## Chi-Square test
 
 ```{r}
 anova(dfa_logistic, test="Chisq")
@@ -146,12 +154,17 @@ anova(dfa_logistic, test="Chisq")
 # pR2(dfa_logistic)
 ```
 
+## Predict values for test dataset
 
 ```{r}
 ### Run the test data thorugh the model
 # Use your model to make predictions, in this example newdata = training set, but replace with your test set    
 test$dfa_prob <- predict(dfa_logistic, newdata = test, type = "response")
 ```
+
+## DIfferent Thresholds
+
+## 0.4
 
 ```{r}
 # with threshold 0.4
@@ -183,6 +196,8 @@ F1
 
 ```
 
+## 0.5
+
 ```{r}
 # with threshold 0.5
 test$dfa_pred <- ifelse(test$dfa_prob > 0.5, "Yes", "No")
@@ -205,6 +220,8 @@ F1
 #-----------------------------------------------------#
 
 ```
+
+## 0.6
 
 ```{r}
 # with threshold 0.6
@@ -229,6 +246,8 @@ F1
 
 ```
 
+## 0.7
+
 ```{r}
 # with threshold 0.7
 test$dfa_pred <- ifelse(test$dfa_prob > 0.7, "Yes", "No")
@@ -251,6 +270,8 @@ F1
 #-----------------------------------------------------#
 
 ```
+
+## ROC Curve
 
 ```{r}
 #-----------------------------------------------------#
