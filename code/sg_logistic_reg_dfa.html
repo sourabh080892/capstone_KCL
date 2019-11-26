@@ -1686,6 +1686,7 @@ summary(dfa_logistic)</code></pre>
 </div>
 <div id="chi-square-test" class="section level2">
 <h2><span class="header-section-number">1.4</span> Chi-Square test</h2>
+<p>The Residual Deviance tells that how the performance of model is degrading by adding each variable. lesser the number, degraded the performance. In our case, it is not impacting the model much as compared to NULL</p>
 <pre class="r"><code>anova(dfa_logistic, test=&quot;Chisq&quot;)</code></pre>
 <pre><code>## Analysis of Deviance Table
 ## 

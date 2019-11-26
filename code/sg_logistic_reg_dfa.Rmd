@@ -145,6 +145,9 @@ summary(dfa_logistic)
 
 ## Chi-Square test
 
+The Residual Deviance tells that how the performance of model is degrading by adding each variable.
+lesser the number, degraded the performance. In our case, it is not impacting the model much as compared to NULL
+
 ```{r}
 anova(dfa_logistic, test="Chisq")
 ```
