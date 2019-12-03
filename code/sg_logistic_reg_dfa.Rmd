@@ -81,7 +81,7 @@ o_dfa_by_category <- o_dfa_by_category %>%
 
 # select required columns to be used for modeling with outcome variable -- DFA(Yes/No)
 dfa_by_category <- o_dfa_by_category %>%
-                      select(c(gender, venue, age, class, crime_hist, drug_case, compt_case, dfa))
+                      select(c(gender, venue, age, class, crime_hist, drug_court, drug_charge, compt_case, le_18, ge_60, dfa))
 summary(dfa_by_category)
 
 ```
@@ -107,12 +107,19 @@ dfa_by_category <- droplevels(dfa_by_category)
 # # 
 dfa_by_category$dfa <- as.factor(dfa_by_category$dfa)
 
+## make CLass GM as reference variable
+dfa_by_category$class <- relevel(dfa_by_category$class,"GM")
+
 # #
 is.factor(dfa_by_category$gender)
 is.factor(dfa_by_category$venue)
 is.factor(dfa_by_category$class)
 is.factor(dfa_by_category$crime_hist)
-is.factor(dfa_by_category$total_dfa)
+is.factor(dfa_by_category$drug_court)
+is.factor(dfa_by_category$drug_charge)
+is.factor(dfa_by_category$compt_case)
+is.factor(dfa_by_category$le_18)
+is.factor(dfa_by_category$ge_60)
 is.factor(dfa_by_category$dfa)
 
 is.factor(dfa_by_category$age)

@@ -63,6 +63,7 @@ library(zoo)
 library(birk)
 library(scales)
 library(doBy)
+library(car)
 
 # LOAD IN DATA
 
@@ -518,11 +519,8 @@ cs_1 <- left_join(D12_case_event, D13_case_event_key, by = c("event_code" = "hea
           select(-c(description))
 
 # filter records where case is drug_Case
-drug_cases <- cs_1[cs_1$hearing_event_classification == 'Drug Court', ] %>%
+drug_court <- cs_1[cs_1$hearing_event_classification == 'Drug Court', ] %>%
                 select(c(file_number))
-
-drug_cases = rbind(drug_case_desc, drug_cases)
-drug_cases <- drug_cases[!duplicated(drug_cases), ]
 
 # filter records where case has competency hearing
 compt_cases <- cs_1[cs_1$hearing_event_classification == 'Competency', ]
@@ -597,7 +595,7 @@ dfa_file_cases <- dfa_file_cases %>%
 # case_stage_by_file$dfa <- ifelse(is.na(match(case_stage_by_file$file_number, dfa_file_cases$file_number)),"No", "Yes")
 
 # Remove un-necessary datasets
-rm(cs_1, cs_2, case_stage_by_file, drug_case_desc)
+rm(cs_1, cs_2, case_stage_by_file)
 
 ```
 
@@ -633,11 +631,24 @@ dfa_by_category$dfa <- ifelse(is.na(match(dfa_by_category$file_number, dfa_file_
 ### adding custody status of the defendant as well
 dfa_by_category <- merge(x = dfa_by_category, y = events_with_missing_def_status, by = c("file_number", "defendant_id"), all.x=TRUE)
 
-### Case is drug case - Yes/No
-dfa_by_category$drug_case <- ifelse(is.na(match(dfa_by_category$file_number, drug_cases$file_number)),"No", "Yes")
+### Case charge is drug charge - Yes/No
+dfa_by_category$drug_charge <- ifelse(is.na(match(dfa_by_category$file_number, drug_case_desc$file_number)),"No", "Yes")
+
+### Case went into drug court - Yes/No
+dfa_by_category$drug_court <- ifelse(is.na(match(dfa_by_category$file_number, drug_court$file_number)),"No", "Yes")
 
 ### Case has atleast one competency hearing - Yes/No
 dfa_by_category$compt_case <- ifelse(is.na(match(dfa_by_category$file_number, compt_cases$file_number)),"No", "Yes")
+
+### Club GM, M, I, U as one class - GM
+dfa_by_category <- dfa_by_category %>%
+                    mutate(class= recode(class, "c('GM', 'M', 'U', 'I')='GM'"))
+
+### new dummy variable for age <=18
+dfa_by_category$le_18 <- ifelse(dfa_by_category$age <= 18, "Yes", "No")
+
+### new dummy variable for age >=60
+dfa_by_category$ge_60 <- ifelse(dfa_by_category$age >= 60, "Yes", "No")
 
 # export dfa_by_category to csv for powerbi
 write.csv(dfa_by_category, '../calculated_data/dfa_by_category_eda.csv')
@@ -849,10 +860,20 @@ summaryBy(dispo_time_filing ~ defendant_status, data = dispo_by_category,
 # disposition time comparing filing date for Drug Cases
 ggplot(dispo_by_category,aes(x=dispo_time_filing)) +
   geom_histogram()  + 
-    xlim(c(-200,1200)) + facet_grid(~drug_case) + ggtitle("Drug Cases")
+    xlim(c(-200,1200)) + facet_grid(~drug_charge) + ggtitle("Drug Charge")
 
 # drug_court
-summaryBy(dispo_time_filing ~ drug_case, data = dispo_by_category, 
+summaryBy(dispo_time_filing ~ drug_charge, data = dispo_by_category, 
+          FUN = list(mean, max, min, median), na.rm=TRUE)
+#-----------------------------------------------------
+
+# disposition time comparing filing date for Drug Cases
+ggplot(dispo_by_category,aes(x=dispo_time_filing)) +
+  geom_histogram()  + 
+    xlim(c(-200,1200)) + facet_grid(~drug_court) + ggtitle("Drug Court")
+
+# drug_court
+summaryBy(dispo_time_filing ~ drug_court, data = dispo_by_category, 
           FUN = list(mean, max, min, median), na.rm=TRUE)
 #-----------------------------------------------------
 ```
@@ -933,10 +954,20 @@ summaryBy(dispo_time_arraign ~ defendant_status, data = dispo_by_category,
 # disposition time comparing last arraignment date for Drug Cases
 ggplot(dispo_by_category,aes(x=dispo_time_arraign)) +
   geom_histogram()  + 
-    xlim(c(-200,1200)) + facet_grid(~drug_case) + ggtitle("Drug Cases")
+    xlim(c(-200,1200)) + facet_grid(~drug_charge) + ggtitle("Drug Charge")
 
 # drug_court
-summaryBy(dispo_time_arraign ~ drug_case, data = dispo_by_category, 
+summaryBy(dispo_time_arraign ~ drug_charge, data = dispo_by_category, 
+          FUN = list(mean, max, min, median), na.rm=TRUE)
+#-----------------------------------------------------
+
+# disposition time comparing last arraignment date for Drug Cases
+ggplot(dispo_by_category,aes(x=dispo_time_arraign)) +
+  geom_histogram()  + 
+    xlim(c(-200,1200)) + facet_grid(~drug_court) + ggtitle("Drug Court")
+
+# drug_court
+summaryBy(dispo_time_arraign ~ drug_court, data = dispo_by_category, 
           FUN = list(mean, max, min, median), na.rm=TRUE)
 #-----------------------------------------------------
 ```
@@ -974,7 +1005,11 @@ ggplot(dispo_by_category, aes(x=total_dfa, y=dispo_time_filing)) +
 
 ggplot(dispo_by_category, aes(x=total_dfa, y=dispo_time_filing)) +
   geom_point(stat = "summary", fun.y = "mean") +
-  facet_grid(~drug_case) + ggtitle("Drug Cases")
+  facet_grid(~drug_charge) + ggtitle("Drug Charge")
+
+ggplot(dispo_by_category, aes(x=total_dfa, y=dispo_time_filing)) +
+  geom_point(stat = "summary", fun.y = "mean") +
+  facet_grid(~drug_court) + ggtitle("Drug Court")
 ```
 
 
@@ -1009,7 +1044,11 @@ ggplot(dispo_by_category, aes(x=total_dfa, y=dispo_time_arraign)) +
 
 ggplot(dispo_by_category, aes(x=total_dfa, y=dispo_time_arraign)) +
   geom_point(stat = "summary", fun.y = "mean") +
-  facet_grid(~drug_case) + ggtitle("Drug Cases")
+  facet_grid(~drug_charge) + ggtitle("Drug Charge")
+
+ggplot(dispo_by_category, aes(x=total_dfa, y=dispo_time_arraign)) +
+  geom_point(stat = "summary", fun.y = "mean") +
+  facet_grid(~drug_court) + ggtitle("Drug Court")
 ```
 
 

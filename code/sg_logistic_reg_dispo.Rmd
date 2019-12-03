@@ -65,6 +65,7 @@ library(ROCR)
 # library(scales)
 # library(doBy)
 library(caTools)
+library(car)
 # Load the package for multinomial modeling
 library(nnet)
 
@@ -82,8 +83,8 @@ o_dfa_by_category <- o_dfa_by_category %>%
                         select(-c(X))
 
 # select required columns to be used for modeling with outcome variable -- DFA(Yes/No)
-dfa_by_category <- o_dfa_by_category %>%
-                select(c(gender, venue, age, class, is_violent, crime_hist, drug_case, compt_case, dfa, dispo_type))
+dfa_by_category <- o_dfa_by_category %>%              
+  select(c(gender, venue, age, class, is_violent, crime_hist, drug_court, drug_charge, compt_case, le_18, ge_60, dfa, dispo_type))
 summary(dfa_by_category)
 
 ```
@@ -112,6 +113,9 @@ dfa_by_category <- dfa_by_category %>%
 dfa_by_category <- droplevels(dfa_by_category)
 # # 
 dfa_by_category$dfa <- as.factor(dfa_by_category$dfa)
+
+## make CLass GM as reference variable
+dfa_by_category$class <- relevel(dfa_by_category$class,"GM")
 
 # #
 is.factor(dfa_by_category$gender)
@@ -161,7 +165,7 @@ summary(dispo_type_logistic)
 # pR2(dfa_logistic)
 ```
 
-## Predict values for test dataset
+### Predict values for test dataset
 
 ```{r}
 ### Run the test data thorugh the model
@@ -173,14 +177,14 @@ test$pred_dispo_type <- dispo_type_logistic %>%
 mean(test$pred_dispo_type == test$dispo_type, na.rm = TRUE)
 ```
 
-## Z- values
+### Z- values
 
 ```{r}
 z <- summary(dispo_type_logistic)$coefficients/summary(dispo_type_logistic)$standard.errors
 z
 ```
 
-## P- values
+### P- values
 
 ```{r}
 
@@ -189,129 +193,278 @@ p <- (1 - pnorm(abs(z), 0, 1)) * 2
 p
 ```
 
-## Confusion Matrix
+### Confusion Matrix
 
 ```{r}
 caret::confusionMatrix(as.factor(test$pred_dispo_type),as.factor(test$dispo_type))
 ```
 
 
+## Build Multinomail model with interaction term dfa * charge_class
+
 ```{r}
-# # with threshold 0.4
-# test$dfa_pred <- ifelse(test$dfa_prob > 0.4, "Yes", "No")
-# test$dfa_pred <-as.factor(test$dfa_pred)
-# 
-# # print confusion matrix
-# confusionMatrix(test$dfa_pred, test$dfa)
-# 
-# #-----------------------------------------------------#
-# y <- test$dfa # logical array of positive / negative cases
-# predictions <- test$dfa_pred # array of predictions
-# 
-# precision <- posPredValue(predictions, y, positive="Yes")
-# precision
-# recall <- sensitivity(predictions, y, positive="Yes")
-# recall
-# 
-# F1 <- (2 * precision * recall) / (precision + recall)
-# F1
-# #-----------------------------------------------------#
-# 
-# #-----------------------------------------------------#
-# # library(pROC)
-# # test$prob = dfa_prob
-# # g <- roc(dfa ~ prob, data = test)
-# # plot(g) 
-# #-----------------------------------------------------#
+# build model for DFA
+# we will use GLM function with argument family = binomial
+# Run the model
+dispo_type_logistic_intrac <- multinom(dispo_type ~ . + dfa * class, data = train)
+
+summary(dispo_type_logistic_intrac)
+```
+
+### Predict values for test dataset
+
+```{r}
+### Run the test data thorugh the model
+# Use your model to make predictions, in this example newdata = training set, but replace with your test set    
+test$pred_dispo_type <- dispo_type_logistic_intrac %>%
+                          predict(test)
+
+# Model accuracy
+mean(test$pred_dispo_type == test$dispo_type, na.rm = TRUE)
+```
+
+### Z- values
+
+```{r}
+z <- summary(dispo_type_logistic_intrac)$coefficients/summary(dispo_type_logistic_intrac)$standard.errors
+z
+```
+
+### P- values
+
+```{r}
+
+# 2-tailed z test
+p <- (1 - pnorm(abs(z), 0, 1)) * 2
+p
+```
+
+### Confusion Matrix
+
+```{r}
+caret::confusionMatrix(as.factor(test$pred_dispo_type),as.factor(test$dispo_type))
+```
+
+
+## Build Logit model with dispo type as Dismissal vs Others
+
+```{r}
+### Club GM, M, I, U as one class - GM
+dfa_by_category <- dfa_by_category %>%
+                    mutate(dispo_type= recode(dispo_type, "c('plea', 'trial')='other'")) %>%
+                    drop_na()
+
+# # 
+dfa_by_category$dispo_type <- as.factor(dfa_by_category$dispo_type)
+```
+
+### Split dataset into Train and Test
+
+```{r}
+# Split the dataset into train and test
+set.seed(123)   #  set seed to ensure you always have same random numbers generated
+
+# feed in your response variable as a vector to get the expected split
+sample = sample.split(dfa_by_category$dispo_type,SplitRatio = 0.8) # splits the data in the ratio mentioned in SplitRatio. After splitting marks these rows as logical TRUE and the the remaining are marked as logical FALSE
+
+train =subset(dfa_by_category, sample ==TRUE) # creates a training dataset named train1 with rows which are marked as TRUE
+test  =subset(dfa_by_category, sample ==FALSE)
 
 ```
 
 ```{r}
-# # with threshold 0.5
-# test$dfa_pred <- ifelse(test$dfa_prob > 0.5, "Yes", "No")
-# test$dfa_pred <-as.factor(test$dfa_pred)
-# 
-# # print confusion matrix
-# confusionMatrix(test$dfa_pred, test$dfa)
-# 
-# #-----------------------------------------------------#
-# y <- test$dfa # logical array of positive / negative cases
-# predictions <- test$dfa_pred # array of predictions
-# 
-# precision <- posPredValue(predictions, y, positive="Yes")
-# precision
-# recall <- sensitivity(predictions, y, positive="Yes")
-# recall
-# 
-# F1 <- (2 * precision * recall) / (precision + recall)
-# F1
-# #-----------------------------------------------------#
+# build model for DFA
+# we will use GLM function with argument family = binomial
+# Run the model
+dispo_type_logistic_disvsoth <- glm(dispo_type ~ . , data = train, family = binomial(link="logit"))
 
+summary(dispo_type_logistic_disvsoth)
 ```
 
-```{r}
-# # with threshold 0.6
-# test$dfa_pred <- ifelse(test$dfa_prob > 0.6, "Yes", "No")
-# test$dfa_pred <-as.factor(test$dfa_pred)
-# 
-# # print confusion matrix
-# confusionMatrix(test$dfa_pred, test$dfa)
-# 
-# #-----------------------------------------------------#
-# y <- test$dfa # logical array of positive / negative cases
-# predictions <- test$dfa_pred # array of predictions
-# 
-# precision <- posPredValue(predictions, y, positive="Yes")
-# precision
-# recall <- sensitivity(predictions, y, positive="Yes")
-# recall
-# 
-# F1 <- (2 * precision * recall) / (precision + recall)
-# F1
-# #-----------------------------------------------------#
 
+## Predict values for test dataset
+
+```{r}
+### Run the test data thorugh the model
+# Use your model to make predictions, in this example newdata = training set, but replace with your test set    
+test$dispo_type_prob <- predict(dispo_type_logistic_disvsoth, newdata = test, type = "response")
 ```
 
-```{r}
-# # with threshold 0.7
-# test$dfa_pred <- ifelse(test$dfa_prob > 0.7, "Yes", "No")
-# test$dfa_pred <-as.factor(test$dfa_pred)
-# 
-# # print confusion matrix
-# confusionMatrix(test$dfa_pred, test$dfa)
-# 
-# #-----------------------------------------------------#
-# y <- test$dfa # logical array of positive / negative cases
-# predictions <- test$dfa_pred # array of predictions
-# 
-# precision <- posPredValue(predictions, y, positive="Yes")
-# precision
-# recall <- sensitivity(predictions, y, positive="Yes")
-# recall
-# 
-# F1 <- (2 * precision * recall) / (precision + recall)
-# F1
-# #-----------------------------------------------------#
+## DIfferent Thresholds with Confusion Matrix and other Stats
 
-```
+## 0.4
 
 ```{r}
-# #-----------------------------------------------------#
+# with threshold 0.4
+test$dispo_type_predict <- ifelse(test$dispo_type_prob < 0.4, "dismissal", "other")
+test$dispo_type_predict <-as.factor(test$dispo_type_predict)
+
+# print confusion matrix
+confusionMatrix(test$dispo_type_predict, test$dispo_type)
+
+#-----------------------------------------------------#
+y <- test$dispo_type # logical array of positive / negative cases
+predictions <- test$dispo_type_predict # array of predictions
+
+precision <- posPredValue(predictions, y, positive="dismissal")
+precision
+recall <- sensitivity(predictions, y, positive="dismissal")
+recall
+
+F1 <- (2 * precision * recall) / (precision + recall)
+F1
+#-----------------------------------------------------#
+
+#-----------------------------------------------------#
 # library(pROC)
-# roc <- roc(test$dfa,test$dfa_prob) #creates an object with all sorts of diagnostics including sensitivities and specificities
-# 
-# test$sens <- roc$sensitivities[2:6837] #include sensitivities in test data
-# test$spec <- roc$specificities[2:6837]
-# 
-# ggplot(test, aes(x=spec, y=sens)) + geom_line()
-# #-----------------------------------------------------#
+# test$prob = dfa_prob
+# g <- roc(dfa ~ prob, data = test)
+# plot(g) 
+#-----------------------------------------------------#
+
 ```
 
+## 0.5
 
 ```{r}
+# with threshold 0.5
+test$dispo_type_predict <- ifelse(test$dispo_type_prob < 0.5, "dismissal", "other")
+test$dispo_type_predict <-as.factor(test$dispo_type_predict)
 
+# print confusion matrix
+confusionMatrix(test$dispo_type_predict, test$dispo_type)
+
+#-----------------------------------------------------#
+y <- test$dispo_type # logical array of positive / negative cases
+predictions <- test$dispo_type_predict # array of predictions
+
+precision <- posPredValue(predictions, y, positive="dismissal")
+precision
+recall <- sensitivity(predictions, y, positive="dismissal")
+recall
+
+F1 <- (2 * precision * recall) / (precision + recall)
+F1
+#-----------------------------------------------------#
 
 ```
+
+## 0.6
+
+```{r}
+# with threshold 0.6
+test$dispo_type_predict <- ifelse(test$dispo_type_prob < 0.6, "dismissal", "other")
+test$dispo_type_predict <-as.factor(test$dispo_type_predict)
+
+# print confusion matrix
+confusionMatrix(test$dispo_type_predict, test$dispo_type)
+
+#-----------------------------------------------------#
+y <- test$dispo_type # logical array of positive / negative cases
+predictions <- test$dispo_type_predict # array of predictions
+
+precision <- posPredValue(predictions, y, positive="dismissal")
+precision
+recall <- sensitivity(predictions, y, positive="dismissal")
+recall
+
+F1 <- (2 * precision * recall) / (precision + recall)
+F1
+#-----------------------------------------------------#
+
+```
+
+## 0.7
+
+```{r}
+# with threshold 0.7
+test$dispo_type_predict <- ifelse(test$dispo_type_prob < 0.7, "dismissal", "other")
+test$dispo_type_predict <-as.factor(test$dispo_type_predict)
+
+# print confusion matrix
+confusionMatrix(test$dispo_type_predict, test$dispo_type)
+
+#-----------------------------------------------------#
+y <- test$dispo_type # logical array of positive / negative cases
+predictions <- test$dispo_type_predict # array of predictions
+
+precision <- posPredValue(predictions, y, positive="dismissal")
+precision
+recall <- sensitivity(predictions, y, positive="dismissal")
+recall
+
+F1 <- (2 * precision * recall) / (precision + recall)
+F1
+#-----------------------------------------------------#
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!-- ### Predict values for test dataset -->
+
+<!-- ```{r} -->
+<!-- ### Run the test data thorugh the model -->
+<!-- # Use your model to make predictions, in this example newdata = training set, but replace with your test set     -->
+<!-- test$pred_dispo_type <- dispo_type_logistic_disvsoth %>% -->
+<!--                           predict(test) -->
+
+<!-- # Model accuracy -->
+<!-- mean(test$pred_dispo_type == test$dispo_type, na.rm = TRUE) -->
+<!-- ``` -->
+
+<!-- ### Z- values -->
+
+<!-- ```{r} -->
+<!-- z <- summary(dispo_type_logistic_intrac)$coefficients/summary(dispo_type_logistic_intrac)$standard.errors -->
+<!-- z -->
+<!-- ``` -->
+
+<!-- ### P- values -->
+
+<!-- ```{r} -->
+
+<!-- # 2-tailed z test -->
+<!-- p <- (1 - pnorm(abs(z), 0, 1)) * 2 -->
+<!-- p -->
+<!-- ``` -->
+
+<!-- ### Confusion Matrix -->
+
+<!-- ```{r} -->
+<!-- caret::confusionMatrix(as.factor(test$pred_dispo_type),as.factor(test$dispo_type)) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+
+
+<!-- ``` -->
 
 
 

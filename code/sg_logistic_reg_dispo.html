@@ -11,7 +11,7 @@
 
 <meta name="author" content="Keith Castelino and Sourabh Gupta" />
 
-<meta name="date" content="2019-11-26" />
+<meta name="date" content="2019-12-03" />
 
 <title>BUAN 5510 - Capstone - Logistic Reg -&gt; Dispo Type</title>
 
@@ -1551,7 +1551,7 @@ div.tocify {
 
 <h1 class="title toc-ignore">BUAN 5510 - Capstone - Logistic Reg -&gt; Dispo Type</h1>
 <h4 class="author">Keith Castelino and Sourabh Gupta</h4>
-<h4 class="date">November 26, 2019</h4>
+<h4 class="date">December 03, 2019</h4>
 
 </div>
 
@@ -1577,32 +1577,32 @@ o_dfa_by_category &lt;- o_dfa_by_category %&gt;%
                         select(-c(X))
 
 # select required columns to be used for modeling with outcome variable -- DFA(Yes/No)
-dfa_by_category &lt;- o_dfa_by_category %&gt;%
-                select(c(gender, venue, age, class, is_violent, crime_hist, drug_case, compt_case, dfa, dispo_type))
+dfa_by_category &lt;- o_dfa_by_category %&gt;%              
+  select(c(gender, venue, age, class, is_violent, crime_hist, drug_court, drug_charge, compt_case, le_18, ge_60, dfa, dispo_type))
 summary(dfa_by_category)</code></pre>
-<pre><code>##      gender        venue            age             class      
-##  Female : 5220   KNT  :15137   Min.   : 14.00   C      :14150  
-##  Male   :28977   Other:   21   1st Qu.: 25.00   B      :12475  
-##  Unknown:   40   SEA  :19079   Median : 32.00   GM     : 5543  
-##                                Mean   : 33.82   A      : 1945  
-##                                3rd Qu.: 41.00   M      :   90  
-##                                Max.   :118.00   (Other):    9  
-##                                                 NA&#39;s   :   25  
-##    is_violent     crime_hist  drug_case   compt_case   dfa       
-##  Min.   :0.0000   No : 1652   No :26620   No :32525   No :19153  
-##  1st Qu.:0.0000   Yes:32585   Yes: 7617   Yes: 1712   Yes:15084  
+<pre><code>##      gender        venue            age          class      
+##  Female : 5220   KNT  :15137   Min.   : 14.00   A   : 1945  
+##  Male   :28977   Other:   21   1st Qu.: 25.00   B   :12475  
+##  Unknown:   40   SEA  :19079   Median : 32.00   C   :14150  
+##                                Mean   : 33.82   GM  : 5642  
+##                                3rd Qu.: 41.00   NA&#39;s:   25  
+##                                Max.   :118.00               
+##                                                             
+##    is_violent     crime_hist  drug_court  drug_charge compt_case 
+##  Min.   :0.0000   No : 1652   No :31257   No :27948   No :32525  
+##  1st Qu.:0.0000   Yes:32585   Yes: 2980   Yes: 6289   Yes: 1712  
 ##  Median :0.0000                                                  
 ##  Mean   :0.1378                                                  
 ##  3rd Qu.:0.0000                                                  
 ##  Max.   :1.0000                                                  
 ##  NA&#39;s   :1881                                                    
-##      dispo_type   
-##  dismissal: 6435  
-##  plea     :21945  
-##  trial    : 1039  
-##  NA&#39;s     : 4818  
-##                   
-##                   
+##  le_18       ge_60        dfa            dispo_type   
+##  No :33299   No :33400   No :19153   dismissal: 6435  
+##  Yes:  938   Yes:  837   Yes:15084   plea     :21945  
+##                                      trial    : 1039  
+##                                      NA&#39;s     : 4818  
+##                                                       
+##                                                       
 ## </code></pre>
 <pre class="r"><code>## munge the data for modeling
 
@@ -1627,6 +1627,9 @@ dfa_by_category &lt;- dfa_by_category %&gt;%
 dfa_by_category &lt;- droplevels(dfa_by_category)
 # # 
 dfa_by_category$dfa &lt;- as.factor(dfa_by_category$dfa)
+
+## make CLass GM as reference variable
+dfa_by_category$class &lt;- relevel(dfa_by_category$class,&quot;GM&quot;)
 
 # #
 is.factor(dfa_by_category$gender)</code></pre>
@@ -1665,46 +1668,45 @@ test  =subset(dfa_by_category, sample ==FALSE)</code></pre>
 dispo_type_logistic &lt;- multinom(dispo_type ~ ., data = train)</code></pre>
 <pre><code>## # weights:  48 (30 variable)
 ## initial  value 24249.669048 
-## iter  10 value 14431.210664
-## iter  20 value 13901.373614
-## iter  30 value 13263.371380
-## iter  40 value 13259.746584
-## final  value 13259.729035 
+## iter  10 value 14154.632070
+## iter  20 value 13678.136790
+## iter  30 value 13254.277932
+## iter  40 value 13083.695428
+## final  value 13083.647587 
 ## converged</code></pre>
 <pre class="r"><code>summary(dispo_type_logistic)</code></pre>
 <pre><code>## Call:
 ## multinom(formula = dispo_type ~ ., data = train)
 ## 
 ## Coefficients:
-##       (Intercept) genderMale  venueSEA         age      classB     classC
-## plea    -3.744696  0.1703622 0.3071672 -0.01155232  0.08002567  0.5110685
-## trial   -2.911955  0.5879040 0.3700809  0.01835272 -0.98704374 -1.1189846
-##         classGM classI    classM classU is_violent crime_histYes
-## plea   2.068387      0  8.453904      0 -0.5730142     4.8550986
-## trial -1.727373      0 -2.034289      0  0.1691729     0.7888175
-##       drug_caseYes compt_caseYes      dfaYes
-## plea    -0.5651852    -1.0533967  0.17444017
-## trial   -0.4648487    -0.6361718 -0.01626406
+##       (Intercept) genderMale  venueSEA         age    classA     classB
+## plea    -1.588454  0.1166031 0.3463975 -0.01244022 -2.085836 -2.0100543
+## trial   -4.762388  0.6172300 0.3572130  0.02311151  1.756741  0.7223013
+##           classC is_violent crime_histYes drug_courtYes drug_chargeYes
+## plea  -1.6085748 -0.5732387     4.8208954    -1.1869054     -0.1287351
+## trial  0.6239804  0.2271571     0.7498341     0.3883749     -0.7936036
+##       compt_caseYes    le_18Yes    ge_60Yes      dfaYes
+## plea     -1.0587610  0.05249604  0.03632992  0.23557895
+## trial    -0.6489443 -1.18705058 -0.99085202 -0.06616326
 ## 
 ## Std. Errors:
-##       (Intercept) genderMale   venueSEA         age     classB     classC
-## plea    0.3082228 0.04836114 0.03550002 0.001580166 0.08916797 0.09759656
-## trial   0.2812180 0.13314565 0.07971878 0.003139326 0.13593541 0.16661473
-##         classGM classI       classM       classU is_violent crime_histYes
-## plea  0.1275724    NaN 1.051214e-06 1.097609e-15 0.06365204     0.2871148
-## trial 0.3375651    NaN 2.290737e-07 3.946585e-24 0.12730626     0.1725515
-##       drug_caseYes compt_caseYes     dfaYes
-## plea    0.04176973    0.07123151 0.03712840
-## trial   0.10589999    0.15432117 0.08719586
+##       (Intercept) genderMale   venueSEA         age    classA     classB
+## plea    0.3020794 0.04902454 0.03590130 0.001811667 0.1277857 0.09127325
+## trial   0.3864498 0.13376465 0.08014126 0.003707664 0.3376870 0.30894795
+##           classC is_violent crime_histYes drug_courtYes drug_chargeYes
+## plea  0.09024088 0.06368815     0.2873693    0.06219058     0.04630388
+## trial 0.30840401 0.12773924     0.1731681    0.13457097     0.12729126
+##       compt_caseYes  le_18Yes  ge_60Yes     dfaYes
+## plea     0.07132857 0.1133797 0.1259278 0.03783862
+## trial    0.15498053 0.3749727 0.2692544 0.08904730
 ## 
-## Residual Deviance: 26519.46 
-## AIC: 26571.46</code></pre>
+## Residual Deviance: 26167.3 
+## AIC: 26227.3</code></pre>
 <pre class="r"><code># anova(dfa_logistic, test=&quot;Chisq&quot;)</code></pre>
 <pre class="r"><code># library(pscl)
 # pR2(dfa_logistic)</code></pre>
-</div>
-<div id="predict-values-for-test-dataset" class="section level2">
-<h2><span class="header-section-number">1.4</span> Predict values for test dataset</h2>
+<div id="predict-values-for-test-dataset" class="section level3">
+<h3><span class="header-section-number">1.3.1</span> Predict values for test dataset</h3>
 <pre class="r"><code>### Run the test data thorugh the model
 # Use your model to make predictions, in this example newdata = training set, but replace with your test set    
 test$pred_dispo_type &lt;- dispo_type_logistic %&gt;%
@@ -1712,162 +1714,505 @@ test$pred_dispo_type &lt;- dispo_type_logistic %&gt;%
 
 # Model accuracy
 mean(test$pred_dispo_type == test$dispo_type, na.rm = TRUE)</code></pre>
-<pre><code>## [1] 0.7576253</code></pre>
+<pre><code>## [1] 0.7605301</code></pre>
 </div>
-<div id="z--values" class="section level2">
-<h2><span class="header-section-number">1.5</span> Z- values</h2>
+<div id="z--values" class="section level3">
+<h3><span class="header-section-number">1.3.2</span> Z- values</h3>
 <pre class="r"><code>z &lt;- summary(dispo_type_logistic)$coefficients/summary(dispo_type_logistic)$standard.errors
 z</code></pre>
-<pre><code>##       (Intercept) genderMale venueSEA       age    classB    classC
-## plea    -12.14931   3.522707 8.652592 -7.310830  0.897471  5.236541
-## trial   -10.35479   4.415495 4.642331  5.846069 -7.261123 -6.716001
-##         classGM classI   classM classU is_violent crime_histYes
-## plea  16.213438    NaN  8042037      0  -9.002291     16.909956
-## trial -5.117154    NaN -8880499      0   1.328866      4.571489
-##       drug_caseYes compt_caseYes     dfaYes
-## plea    -13.530977    -14.788353  4.6982945
-## trial    -4.389506     -4.122389 -0.1865233</code></pre>
+<pre><code>##       (Intercept) genderMale venueSEA       age     classA     classB
+## plea    -5.258398   2.378463 9.648607 -6.866723 -16.322926 -22.022380
+## trial  -12.323433   4.614298 4.457292  6.233442   5.202276   2.337938
+##           classC is_violent crime_histYes drug_courtYes drug_chargeYes
+## plea  -17.825345  -9.000712     16.775956    -19.084971      -2.780222
+## trial   2.023257   1.778288      4.330094      2.886023      -6.234549
+##       compt_caseYes  le_18Yes  ge_60Yes     dfaYes
+## plea     -14.843436  0.463011  0.288498  6.2258871
+## trial     -4.187263 -3.165698 -3.679985 -0.7430125</code></pre>
 </div>
-<div id="p--values" class="section level2">
-<h2><span class="header-section-number">1.6</span> P- values</h2>
+<div id="p--values" class="section level3">
+<h3><span class="header-section-number">1.3.3</span> P- values</h3>
 <pre class="r"><code># 2-tailed z test
 p &lt;- (1 - pnorm(abs(z), 0, 1)) * 2
 p</code></pre>
-<pre><code>##       (Intercept)   genderMale     venueSEA          age       classB
-## plea            0 0.0004271627 0.000000e+00 2.655653e-13 3.694676e-01
-## trial           0 0.0000100779 3.445012e-06 5.033241e-09 3.839151e-13
-##             classC      classGM classI classM classU is_violent
-## plea  1.636135e-07 0.000000e+00    NaN      0      1  0.0000000
-## trial 1.867795e-11 3.101811e-07    NaN      0      1  0.1838923
-##       crime_histYes drug_caseYes compt_caseYes       dfaYes
-## plea   0.000000e+00 0.000000e+00   0.00000e+00 2.623430e-06
-## trial  4.842697e-06 1.136082e-05   3.74964e-05 8.520344e-01</code></pre>
+<pre><code>##        (Intercept)   genderMale     venueSEA          age       classA
+## plea  1.453154e-07 1.738498e-02 0.000000e+00 6.569412e-12 0.000000e+00
+## trial 0.000000e+00 3.944261e-06 8.300138e-06 4.562950e-10 1.968631e-07
+##           classB     classC is_violent crime_histYes drug_courtYes
+## plea  0.00000000 0.00000000 0.00000000  0.000000e+00   0.000000000
+## trial 0.01939044 0.04304671 0.07535664  1.490454e-05   0.003901439
+##       drug_chargeYes compt_caseYes    le_18Yes     ge_60Yes       dfaYes
+## plea    5.432180e-03  0.000000e+00 0.643356494 0.7729655904 4.788387e-10
+## trial   4.530816e-10  2.823382e-05 0.001547112 0.0002332476 4.574741e-01</code></pre>
 </div>
-<div id="confusion-matrix" class="section level2">
-<h2><span class="header-section-number">1.7</span> Confusion Matrix</h2>
+<div id="confusion-matrix" class="section level3">
+<h3><span class="header-section-number">1.3.4</span> Confusion Matrix</h3>
 <pre class="r"><code>caret::confusionMatrix(as.factor(test$pred_dispo_type),as.factor(test$dispo_type))</code></pre>
 <pre><code>## Confusion Matrix and Statistics
 ## 
 ##            Reference
 ## Prediction  dismissal plea trial
-##   dismissal       165   38    20
-##   plea           1094 4008   182
-##   trial             0    1     0
+##   dismissal       202   60    24
+##   plea           1057 3987   178
+##   trial             0    0     0
 ## 
 ## Overall Statistics
-##                                           
-##                Accuracy : 0.7576          
-##                  95% CI : (0.7461, 0.7689)
-##     No Information Rate : 0.7347          
-##     P-Value [Acc &gt; NIR] : 5.56e-05        
-##                                           
-##                   Kappa : 0.1522          
-##                                           
-##  Mcnemar&#39;s Test P-Value : &lt; 2.2e-16       
+##                                          
+##                Accuracy : 0.7605         
+##                  95% CI : (0.749, 0.7718)
+##     No Information Rate : 0.7347         
+##     P-Value [Acc &gt; NIR] : 6.404e-06      
+##                                          
+##                   Kappa : 0.1786         
+##                                          
+##  Mcnemar&#39;s Test P-Value : &lt; 2.2e-16      
 ## 
 ## Statistics by Class:
 ## 
 ##                      Class: dismissal Class: plea Class: trial
-## Sensitivity                   0.13106      0.9904    0.0000000
-## Specificity                   0.98635      0.1266    0.9998115
-## Pos Pred Value                0.73991      0.7585    0.0000000
-## Neg Pred Value                0.79300      0.8259    0.9633194
+## Sensitivity                   0.16044      0.9852      0.00000
+## Specificity                   0.98023      0.1547      1.00000
+## Pos Pred Value                0.70629      0.7635          NaN
+## Neg Pred Value                0.79759      0.7902      0.96333
+## Prevalence                    0.22858      0.7347      0.03667
+## Detection Rate                0.03667      0.7239      0.00000
+## Detection Prevalence          0.05192      0.9481      0.00000
+## Balanced Accuracy             0.57034      0.5699      0.50000</code></pre>
+</div>
+</div>
+<div id="build-multinomail-model-with-interaction-term-dfa-charge_class" class="section level2">
+<h2><span class="header-section-number">1.4</span> Build Multinomail model with interaction term dfa * charge_class</h2>
+<pre class="r"><code># build model for DFA
+# we will use GLM function with argument family = binomial
+# Run the model
+dispo_type_logistic_intrac &lt;- multinom(dispo_type ~ . + dfa * class, data = train)</code></pre>
+<pre><code>## # weights:  57 (36 variable)
+## initial  value 24249.669048 
+## iter  10 value 14178.692678
+## iter  20 value 13816.502482
+## iter  30 value 13212.162609
+## iter  40 value 13067.998333
+## final  value 13062.810355 
+## converged</code></pre>
+<pre class="r"><code>summary(dispo_type_logistic_intrac)</code></pre>
+<pre><code>## Call:
+## multinom(formula = dispo_type ~ . + dfa * class, data = train)
+## 
+## Coefficients:
+##       (Intercept) genderMale  venueSEA         age    classA     classB
+## plea    -1.692365  0.1231061 0.3457133 -0.01240917 -1.803232 -1.8373269
+## trial   -4.846980  0.6232073 0.3584656  0.02315031  1.921321  0.8824695
+##           classC is_violent crime_histYes drug_courtYes drug_chargeYes
+## plea  -1.5710031 -0.6160923     4.8156129    -1.1967105     -0.1454908
+## trial  0.6327568  0.1707067     0.7559004     0.3944425     -0.8106603
+##       compt_caseYes    le_18Yes    ge_60Yes    dfaYes classA:dfaYes
+## plea     -1.0600918  0.03433925  0.03757313 0.6199813    -1.2476255
+## trial    -0.6536224 -1.19374676 -0.98941206 0.2077968    -0.4513366
+##       classB:dfaYes classC:dfaYes
+## plea     -0.5231721    -0.2203982
+## trial    -0.4702043    -0.1157865
+## 
+## Std. Errors:
+##       (Intercept) genderMale   venueSEA         age    classA    classB
+## plea    0.3064945 0.04909794 0.03592350 0.001812747 0.1408607 0.1060582
+## trial   0.4231548 0.13384468 0.08017521 0.003708726 0.3827613 0.3573162
+##          classC is_violent crime_histYes drug_courtYes drug_chargeYes
+## plea  0.1040785 0.06487322     0.2878637    0.06243913     0.04651276
+## trial 0.3570411 0.13019293     0.1733815    0.13502060     0.12793090
+##       compt_caseYes  le_18Yes  ge_60Yes    dfaYes classA:dfaYes
+## plea     0.07129532 0.1134683 0.1259920 0.2003509     0.2790820
+## trial    0.15506470 0.3748982 0.2692682 0.6939590     0.7353184
+##       classB:dfaYes classC:dfaYes
+## plea      0.2077624     0.2072522
+## trial     0.7052305     0.7073694
+## 
+## Residual Deviance: 26125.62 
+## AIC: 26197.62</code></pre>
+<div id="predict-values-for-test-dataset-1" class="section level3">
+<h3><span class="header-section-number">1.4.1</span> Predict values for test dataset</h3>
+<pre class="r"><code>### Run the test data thorugh the model
+# Use your model to make predictions, in this example newdata = training set, but replace with your test set    
+test$pred_dispo_type &lt;- dispo_type_logistic_intrac %&gt;%
+                          predict(test)
+
+# Model accuracy
+mean(test$pred_dispo_type == test$dispo_type, na.rm = TRUE)</code></pre>
+<pre><code>## [1] 0.7614379</code></pre>
+</div>
+<div id="z--values-1" class="section level3">
+<h3><span class="header-section-number">1.4.2</span> Z- values</h3>
+<pre class="r"><code>z &lt;- summary(dispo_type_logistic_intrac)$coefficients/summary(dispo_type_logistic_intrac)$standard.errors
+z</code></pre>
+<pre><code>##       (Intercept) genderMale venueSEA       age     classA     classB
+## plea    -5.521683   2.507357 9.623596 -6.845501 -12.801524 -17.323759
+## trial  -11.454389   4.656198 4.471028  6.242121   5.019632   2.469716
+##           classC is_violent crime_histYes drug_courtYes drug_chargeYes
+## plea  -15.094405  -9.496866     16.728795     -19.16604      -3.127975
+## trial   1.772224   1.311182      4.359753       2.92135      -6.336704
+##       compt_caseYes  le_18Yes   ge_60Yes    dfaYes classA:dfaYes
+## plea     -14.869023  0.302633  0.2982183 3.0944781    -4.4704619
+## trial     -4.215159 -3.184189 -3.6744476 0.2994366    -0.6137975
+##       classB:dfaYes classC:dfaYes
+## plea     -2.5181272    -1.0634298
+## trial    -0.6667386    -0.1636861</code></pre>
+</div>
+<div id="p--values-1" class="section level3">
+<h3><span class="header-section-number">1.4.3</span> P- values</h3>
+<pre class="r"><code># 2-tailed z test
+p &lt;- (1 - pnorm(abs(z), 0, 1)) * 2
+p</code></pre>
+<pre><code>##        (Intercept)   genderMale    venueSEA          age       classA
+## plea  3.357686e-08 1.216377e-02 0.00000e+00 7.620793e-12 0.000000e+00
+## trial 0.000000e+00 3.221028e-06 7.78445e-06 4.316776e-10 5.177066e-07
+##           classB     classC is_violent crime_histYes drug_courtYes
+## plea  0.00000000 0.00000000  0.0000000  0.000000e+00   0.000000000
+## trial 0.01352203 0.07635735  0.1897962  1.302091e-05   0.003485177
+##       drug_chargeYes compt_caseYes    le_18Yes     ge_60Yes      dfaYes
+## plea    1.760149e-03  0.000000e+00 0.762169529 0.7655365846 0.001971595
+## trial   2.347322e-10  2.496021e-05 0.001451602 0.0002383646 0.764606904
+##       classA:dfaYes classB:dfaYes classC:dfaYes
+## plea   7.805086e-06    0.01179807     0.2875871
+## trial  5.393492e-01    0.50493915     0.8699782</code></pre>
+</div>
+<div id="confusion-matrix-1" class="section level3">
+<h3><span class="header-section-number">1.4.4</span> Confusion Matrix</h3>
+<pre class="r"><code>caret::confusionMatrix(as.factor(test$pred_dispo_type),as.factor(test$dispo_type))</code></pre>
+<pre><code>## Confusion Matrix and Statistics
+## 
+##            Reference
+## Prediction  dismissal plea trial
+##   dismissal       218   70    28
+##   plea           1041 3976   174
+##   trial             0    1     0
+## 
+## Overall Statistics
+##                                         
+##                Accuracy : 0.7614        
+##                  95% CI : (0.75, 0.7726)
+##     No Information Rate : 0.7347        
+##     P-Value [Acc &gt; NIR] : 3.1e-06       
+##                                         
+##                   Kappa : 0.1897        
+##                                         
+##  Mcnemar&#39;s Test P-Value : &lt; 2e-16       
+## 
+## Statistics by Class:
+## 
+##                      Class: dismissal Class: plea Class: trial
+## Sensitivity                   0.17315      0.9825    0.0000000
+## Specificity                   0.97694      0.1684    0.9998115
+## Pos Pred Value                0.68987      0.7659    0.0000000
+## Neg Pred Value                0.79950      0.7760    0.9633194
 ## Prevalence                    0.22858      0.7347    0.0366739
-## Detection Rate                0.02996      0.7277    0.0000000
-## Detection Prevalence          0.04049      0.9593    0.0001816
-## Balanced Accuracy             0.55870      0.5585    0.4999058</code></pre>
-<pre class="r"><code># # with threshold 0.4
-# test$dfa_pred &lt;- ifelse(test$dfa_prob &gt; 0.4, &quot;Yes&quot;, &quot;No&quot;)
-# test$dfa_pred &lt;-as.factor(test$dfa_pred)
-# 
-# # print confusion matrix
-# confusionMatrix(test$dfa_pred, test$dfa)
-# 
-# #-----------------------------------------------------#
-# y &lt;- test$dfa # logical array of positive / negative cases
-# predictions &lt;- test$dfa_pred # array of predictions
-# 
-# precision &lt;- posPredValue(predictions, y, positive=&quot;Yes&quot;)
-# precision
-# recall &lt;- sensitivity(predictions, y, positive=&quot;Yes&quot;)
-# recall
-# 
-# F1 &lt;- (2 * precision * recall) / (precision + recall)
-# F1
-# #-----------------------------------------------------#
-# 
-# #-----------------------------------------------------#
-# # library(pROC)
-# # test$prob = dfa_prob
-# # g &lt;- roc(dfa ~ prob, data = test)
-# # plot(g) 
-# #-----------------------------------------------------#</code></pre>
-<pre class="r"><code># # with threshold 0.5
-# test$dfa_pred &lt;- ifelse(test$dfa_prob &gt; 0.5, &quot;Yes&quot;, &quot;No&quot;)
-# test$dfa_pred &lt;-as.factor(test$dfa_pred)
-# 
-# # print confusion matrix
-# confusionMatrix(test$dfa_pred, test$dfa)
-# 
-# #-----------------------------------------------------#
-# y &lt;- test$dfa # logical array of positive / negative cases
-# predictions &lt;- test$dfa_pred # array of predictions
-# 
-# precision &lt;- posPredValue(predictions, y, positive=&quot;Yes&quot;)
-# precision
-# recall &lt;- sensitivity(predictions, y, positive=&quot;Yes&quot;)
-# recall
-# 
-# F1 &lt;- (2 * precision * recall) / (precision + recall)
-# F1
-# #-----------------------------------------------------#</code></pre>
-<pre class="r"><code># # with threshold 0.6
-# test$dfa_pred &lt;- ifelse(test$dfa_prob &gt; 0.6, &quot;Yes&quot;, &quot;No&quot;)
-# test$dfa_pred &lt;-as.factor(test$dfa_pred)
-# 
-# # print confusion matrix
-# confusionMatrix(test$dfa_pred, test$dfa)
-# 
-# #-----------------------------------------------------#
-# y &lt;- test$dfa # logical array of positive / negative cases
-# predictions &lt;- test$dfa_pred # array of predictions
-# 
-# precision &lt;- posPredValue(predictions, y, positive=&quot;Yes&quot;)
-# precision
-# recall &lt;- sensitivity(predictions, y, positive=&quot;Yes&quot;)
-# recall
-# 
-# F1 &lt;- (2 * precision * recall) / (precision + recall)
-# F1
-# #-----------------------------------------------------#</code></pre>
-<pre class="r"><code># # with threshold 0.7
-# test$dfa_pred &lt;- ifelse(test$dfa_prob &gt; 0.7, &quot;Yes&quot;, &quot;No&quot;)
-# test$dfa_pred &lt;-as.factor(test$dfa_pred)
-# 
-# # print confusion matrix
-# confusionMatrix(test$dfa_pred, test$dfa)
-# 
-# #-----------------------------------------------------#
-# y &lt;- test$dfa # logical array of positive / negative cases
-# predictions &lt;- test$dfa_pred # array of predictions
-# 
-# precision &lt;- posPredValue(predictions, y, positive=&quot;Yes&quot;)
-# precision
-# recall &lt;- sensitivity(predictions, y, positive=&quot;Yes&quot;)
-# recall
-# 
-# F1 &lt;- (2 * precision * recall) / (precision + recall)
-# F1
-# #-----------------------------------------------------#</code></pre>
-<pre class="r"><code># #-----------------------------------------------------#
+## Detection Rate                0.03958      0.7219    0.0000000
+## Detection Prevalence          0.05737      0.9424    0.0001816
+## Balanced Accuracy             0.57504      0.5754    0.4999058</code></pre>
+</div>
+</div>
+<div id="build-logit-model-with-dispo-type-as-dismissal-vs-others" class="section level2">
+<h2><span class="header-section-number">1.5</span> Build Logit model with dispo type as Dismissal vs Others</h2>
+<pre class="r"><code>### Club GM, M, I, U as one class - GM
+dfa_by_category &lt;- dfa_by_category %&gt;%
+                    mutate(dispo_type= recode(dispo_type, &quot;c(&#39;plea&#39;, &#39;trial&#39;)=&#39;other&#39;&quot;)) %&gt;%
+                    drop_na()
+
+# # 
+dfa_by_category$dispo_type &lt;- as.factor(dfa_by_category$dispo_type)</code></pre>
+<div id="split-dataset-into-train-and-test" class="section level3">
+<h3><span class="header-section-number">1.5.1</span> Split dataset into Train and Test</h3>
+<pre class="r"><code># Split the dataset into train and test
+set.seed(123)   #  set seed to ensure you always have same random numbers generated
+
+# feed in your response variable as a vector to get the expected split
+sample = sample.split(dfa_by_category$dispo_type,SplitRatio = 0.8) # splits the data in the ratio mentioned in SplitRatio. After splitting marks these rows as logical TRUE and the the remaining are marked as logical FALSE
+
+train =subset(dfa_by_category, sample ==TRUE) # creates a training dataset named train1 with rows which are marked as TRUE
+test  =subset(dfa_by_category, sample ==FALSE)</code></pre>
+<pre class="r"><code># build model for DFA
+# we will use GLM function with argument family = binomial
+# Run the model
+dispo_type_logistic_disvsoth &lt;- glm(dispo_type ~ . , data = train, family = binomial(link=&quot;logit&quot;))
+
+summary(dispo_type_logistic_disvsoth)</code></pre>
+<pre><code>## 
+## Call:
+## glm(formula = dispo_type ~ ., family = binomial(link = &quot;logit&quot;), 
+##     data = train)
+## 
+## Deviance Residuals: 
+##     Min       1Q   Median       3Q      Max  
+## -2.6849   0.2666   0.5917   0.7054   2.5385  
+## 
+## Coefficients:
+##                 Estimate Std. Error z value Pr(&gt;|z|)    
+## (Intercept)    -0.370539   0.181605  -2.040 0.041315 *  
+## genderMale      0.137640   0.048376   2.845 0.004439 ** 
+## venueSEA        0.349822   0.035448   9.868  &lt; 2e-16 ***
+## age            -0.008883   0.001784  -4.980 6.35e-07 ***
+## classA         -1.638298   0.124843 -13.123  &lt; 2e-16 ***
+## classB         -1.908545   0.089245 -21.385  &lt; 2e-16 ***
+## classC         -1.530236   0.088177 -17.354  &lt; 2e-16 ***
+## is_violent     -0.529250   0.062483  -8.470  &lt; 2e-16 ***
+## crime_histYes   3.422510   0.151672  22.565  &lt; 2e-16 ***
+## drug_courtYes  -1.063553   0.061154 -17.391  &lt; 2e-16 ***
+## drug_chargeYes -0.168641   0.045933  -3.671 0.000241 ***
+## compt_caseYes  -1.079246   0.069576 -15.512  &lt; 2e-16 ***
+## le_18Yes       -0.009285   0.110589  -0.084 0.933092    
+## ge_60Yes       -0.057943   0.123748  -0.468 0.639616    
+## dfaYes          0.223868   0.037526   5.966 2.44e-09 ***
+## ---
+## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
+## 
+## (Dispersion parameter for binomial family taken to be 1)
+## 
+##     Null deviance: 23669  on 22063  degrees of freedom
+## Residual deviance: 20765  on 22049  degrees of freedom
+## AIC: 20795
+## 
+## Number of Fisher Scoring iterations: 5</code></pre>
+</div>
+</div>
+<div id="predict-values-for-test-dataset-2" class="section level2">
+<h2><span class="header-section-number">1.6</span> Predict values for test dataset</h2>
+<pre class="r"><code>### Run the test data thorugh the model
+# Use your model to make predictions, in this example newdata = training set, but replace with your test set    
+test$dispo_type_prob &lt;- predict(dispo_type_logistic_disvsoth, newdata = test, type = &quot;response&quot;)</code></pre>
+</div>
+<div id="different-thresholds-with-confusion-matrix-and-other-stats" class="section level2">
+<h2><span class="header-section-number">1.7</span> DIfferent Thresholds with Confusion Matrix and other Stats</h2>
+</div>
+<div id="section" class="section level2">
+<h2><span class="header-section-number">1.8</span> 0.4</h2>
+<pre class="r"><code># with threshold 0.4
+test$dispo_type_predict &lt;- ifelse(test$dispo_type_prob &lt; 0.4, &quot;dismissal&quot;, &quot;other&quot;)
+test$dispo_type_predict &lt;-as.factor(test$dispo_type_predict)
+
+# print confusion matrix
+confusionMatrix(test$dispo_type_predict, test$dispo_type)</code></pre>
+<pre><code>## Confusion Matrix and Statistics
+## 
+##            Reference
+## Prediction  dismissal other
+##   dismissal       117    20
+##   other          1139  4241
+##                                           
+##                Accuracy : 0.7899          
+##                  95% CI : (0.7789, 0.8006)
+##     No Information Rate : 0.7723          
+##     P-Value [Acc &gt; NIR] : 0.0008907       
+##                                           
+##                   Kappa : 0.129           
+##                                           
+##  Mcnemar&#39;s Test P-Value : &lt; 2.2e-16       
+##                                           
+##             Sensitivity : 0.09315         
+##             Specificity : 0.99531         
+##          Pos Pred Value : 0.85401         
+##          Neg Pred Value : 0.78829         
+##              Prevalence : 0.22766         
+##          Detection Rate : 0.02121         
+##    Detection Prevalence : 0.02483         
+##       Balanced Accuracy : 0.54423         
+##                                           
+##        &#39;Positive&#39; Class : dismissal       
+## </code></pre>
+<pre class="r"><code>#-----------------------------------------------------#
+y &lt;- test$dispo_type # logical array of positive / negative cases
+predictions &lt;- test$dispo_type_predict # array of predictions
+
+precision &lt;- posPredValue(predictions, y, positive=&quot;dismissal&quot;)
+precision</code></pre>
+<pre><code>## [1] 0.8540146</code></pre>
+<pre class="r"><code>recall &lt;- sensitivity(predictions, y, positive=&quot;dismissal&quot;)
+recall</code></pre>
+<pre><code>## [1] 0.09315287</code></pre>
+<pre class="r"><code>F1 &lt;- (2 * precision * recall) / (precision + recall)
+F1</code></pre>
+<pre><code>## [1] 0.1679828</code></pre>
+<pre class="r"><code>#-----------------------------------------------------#
+
+#-----------------------------------------------------#
 # library(pROC)
-# roc &lt;- roc(test$dfa,test$dfa_prob) #creates an object with all sorts of diagnostics including sensitivities and specificities
-# 
-# test$sens &lt;- roc$sensitivities[2:6837] #include sensitivities in test data
-# test$spec &lt;- roc$specificities[2:6837]
-# 
-# ggplot(test, aes(x=spec, y=sens)) + geom_line()
-# #-----------------------------------------------------#</code></pre>
+# test$prob = dfa_prob
+# g &lt;- roc(dfa ~ prob, data = test)
+# plot(g) 
+#-----------------------------------------------------#</code></pre>
+</div>
+<div id="section-1" class="section level2">
+<h2><span class="header-section-number">1.9</span> 0.5</h2>
+<pre class="r"><code># with threshold 0.5
+test$dispo_type_predict &lt;- ifelse(test$dispo_type_prob &lt; 0.5, &quot;dismissal&quot;, &quot;other&quot;)
+test$dispo_type_predict &lt;-as.factor(test$dispo_type_predict)
+
+# print confusion matrix
+confusionMatrix(test$dispo_type_predict, test$dispo_type)</code></pre>
+<pre><code>## Confusion Matrix and Statistics
+## 
+##            Reference
+## Prediction  dismissal other
+##   dismissal       155    52
+##   other          1101  4209
+##                                         
+##                Accuracy : 0.791         
+##                  95% CI : (0.78, 0.8017)
+##     No Information Rate : 0.7723        
+##     P-Value [Acc &gt; NIR] : 0.0004486     
+##                                         
+##                   Kappa : 0.1576        
+##                                         
+##  Mcnemar&#39;s Test P-Value : &lt; 2.2e-16     
+##                                         
+##             Sensitivity : 0.12341       
+##             Specificity : 0.98780       
+##          Pos Pred Value : 0.74879       
+##          Neg Pred Value : 0.79266       
+##              Prevalence : 0.22766       
+##          Detection Rate : 0.02809       
+##    Detection Prevalence : 0.03752       
+##       Balanced Accuracy : 0.55560       
+##                                         
+##        &#39;Positive&#39; Class : dismissal     
+## </code></pre>
+<pre class="r"><code>#-----------------------------------------------------#
+y &lt;- test$dispo_type # logical array of positive / negative cases
+predictions &lt;- test$dispo_type_predict # array of predictions
+
+precision &lt;- posPredValue(predictions, y, positive=&quot;dismissal&quot;)
+precision</code></pre>
+<pre><code>## [1] 0.7487923</code></pre>
+<pre class="r"><code>recall &lt;- sensitivity(predictions, y, positive=&quot;dismissal&quot;)
+recall</code></pre>
+<pre><code>## [1] 0.1234076</code></pre>
+<pre class="r"><code>F1 &lt;- (2 * precision * recall) / (precision + recall)
+F1</code></pre>
+<pre><code>## [1] 0.2118934</code></pre>
+<pre class="r"><code>#-----------------------------------------------------#</code></pre>
+</div>
+<div id="section-2" class="section level2">
+<h2><span class="header-section-number">1.10</span> 0.6</h2>
+<pre class="r"><code># with threshold 0.6
+test$dispo_type_predict &lt;- ifelse(test$dispo_type_prob &lt; 0.6, &quot;dismissal&quot;, &quot;other&quot;)
+test$dispo_type_predict &lt;-as.factor(test$dispo_type_predict)
+
+# print confusion matrix
+confusionMatrix(test$dispo_type_predict, test$dispo_type)</code></pre>
+<pre><code>## Confusion Matrix and Statistics
+## 
+##            Reference
+## Prediction  dismissal other
+##   dismissal       284   206
+##   other           972  4055
+##                                           
+##                Accuracy : 0.7865          
+##                  95% CI : (0.7754, 0.7972)
+##     No Information Rate : 0.7723          
+##     P-Value [Acc &gt; NIR] : 0.006141        
+##                                           
+##                   Kappa : 0.2265          
+##                                           
+##  Mcnemar&#39;s Test P-Value : &lt; 2.2e-16       
+##                                           
+##             Sensitivity : 0.22611         
+##             Specificity : 0.95165         
+##          Pos Pred Value : 0.57959         
+##          Neg Pred Value : 0.80664         
+##              Prevalence : 0.22766         
+##          Detection Rate : 0.05148         
+##    Detection Prevalence : 0.08882         
+##       Balanced Accuracy : 0.58888         
+##                                           
+##        &#39;Positive&#39; Class : dismissal       
+## </code></pre>
+<pre class="r"><code>#-----------------------------------------------------#
+y &lt;- test$dispo_type # logical array of positive / negative cases
+predictions &lt;- test$dispo_type_predict # array of predictions
+
+precision &lt;- posPredValue(predictions, y, positive=&quot;dismissal&quot;)
+precision</code></pre>
+<pre><code>## [1] 0.5795918</code></pre>
+<pre class="r"><code>recall &lt;- sensitivity(predictions, y, positive=&quot;dismissal&quot;)
+recall</code></pre>
+<pre><code>## [1] 0.2261146</code></pre>
+<pre class="r"><code>F1 &lt;- (2 * precision * recall) / (precision + recall)
+F1</code></pre>
+<pre><code>## [1] 0.325315</code></pre>
+<pre class="r"><code>#-----------------------------------------------------#</code></pre>
+</div>
+<div id="section-3" class="section level2">
+<h2><span class="header-section-number">1.11</span> 0.7</h2>
+<pre class="r"><code># with threshold 0.7
+test$dispo_type_predict &lt;- ifelse(test$dispo_type_prob &lt; 0.7, &quot;dismissal&quot;, &quot;other&quot;)
+test$dispo_type_predict &lt;-as.factor(test$dispo_type_predict)
+
+# print confusion matrix
+confusionMatrix(test$dispo_type_predict, test$dispo_type)</code></pre>
+<pre><code>## Confusion Matrix and Statistics
+## 
+##            Reference
+## Prediction  dismissal other
+##   dismissal       529   622
+##   other           727  3639
+##                                           
+##                Accuracy : 0.7555          
+##                  95% CI : (0.7439, 0.7668)
+##     No Information Rate : 0.7723          
+##     P-Value [Acc &gt; NIR] : 0.998557        
+##                                           
+##                   Kappa : 0.2836          
+##                                           
+##  Mcnemar&#39;s Test P-Value : 0.004632        
+##                                           
+##             Sensitivity : 0.42118         
+##             Specificity : 0.85402         
+##          Pos Pred Value : 0.45960         
+##          Neg Pred Value : 0.83349         
+##              Prevalence : 0.22766         
+##          Detection Rate : 0.09589         
+##    Detection Prevalence : 0.20863         
+##       Balanced Accuracy : 0.63760         
+##                                           
+##        &#39;Positive&#39; Class : dismissal       
+## </code></pre>
+<pre class="r"><code>#-----------------------------------------------------#
+y &lt;- test$dispo_type # logical array of positive / negative cases
+predictions &lt;- test$dispo_type_predict # array of predictions
+
+precision &lt;- posPredValue(predictions, y, positive=&quot;dismissal&quot;)
+precision</code></pre>
+<pre><code>## [1] 0.4596003</code></pre>
+<pre class="r"><code>recall &lt;- sensitivity(predictions, y, positive=&quot;dismissal&quot;)
+recall</code></pre>
+<pre><code>## [1] 0.4211783</code></pre>
+<pre class="r"><code>F1 &lt;- (2 * precision * recall) / (precision + recall)
+F1</code></pre>
+<pre><code>## [1] 0.4395513</code></pre>
+<pre class="r"><code>#-----------------------------------------------------#</code></pre>
+<!-- ### Predict values for test dataset -->
+<!-- ```{r} -->
+<!-- ### Run the test data thorugh the model -->
+<!-- # Use your model to make predictions, in this example newdata = training set, but replace with your test set     -->
+<!-- test$pred_dispo_type <- dispo_type_logistic_disvsoth %>% -->
+<!--                           predict(test) -->
+<!-- # Model accuracy -->
+<!-- mean(test$pred_dispo_type == test$dispo_type, na.rm = TRUE) -->
+<!-- ``` -->
+<!-- ### Z- values -->
+<!-- ```{r} -->
+<!-- z <- summary(dispo_type_logistic_intrac)$coefficients/summary(dispo_type_logistic_intrac)$standard.errors -->
+<!-- z -->
+<!-- ``` -->
+<!-- ### P- values -->
+<!-- ```{r} -->
+<!-- # 2-tailed z test -->
+<!-- p <- (1 - pnorm(abs(z), 0, 1)) * 2 -->
+<!-- p -->
+<!-- ``` -->
+<!-- ### Confusion Matrix -->
+<!-- ```{r} -->
+<!-- caret::confusionMatrix(as.factor(test$pred_dispo_type),as.factor(test$dispo_type)) -->
+<!-- ``` -->
+<!-- ```{r} -->
+<!-- ``` -->
 </div>
 </div>
 
