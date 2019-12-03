@@ -1,0 +1,168 @@
+---
+title: "BUAN 5510 - Capstone - Logistic Reg -> Dispo Type"
+author: "Keith Castelino and Sourabh Gupta"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    theme: united
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+
+
+######### Seach for text ----   Data Cleaning has been completed, now the analysis   ----   ############
+
+knitr::opts_chunk$set(
+	fig.width = 8.5,
+	# include = FALSE,
+	# echo = FALSE,
+	message = FALSE,
+	warning = FALSE
+)
+
+options(tibble.print_max = 40, tibble.print_min = 25)
+
+```
+
+# Prepare your environment
+
+Following needs to be done in order to prepare your environment:
+
++ Clean environment of all variables, functions and packages
++ Load packages required for analysis (only those that are required)
++ Set colour preferences for graphs
++ Load custom functions
+
+Read in the raw data, as is required.
+
+```{r echo = FALSE, message = FALSE, warning = FALSE, include = FALSE}
+
+# Clear environment of variables and functions
+rm(list = ls(all = TRUE)) 
+
+# Clear environment of packages
+if(is.null(sessionInfo()$otherPkgs) == FALSE) {
+  lapply(paste("package:", names(sessionInfo()$otherPkgs), sep=""), 
+         detach, character.only = TRUE, unload = TRUE)
+}
+
+# # load required libraries (Use install.packages(tidyverse), for example, if needed)
+library(tidyverse)
+library(caret)
+library(ROCR)
+# library(readxl)
+# library(dlookr)
+# library(janitor)
+# library(stringr)
+# library(lubridate)
+# library(naniar)
+# library(zoo)
+# library(birk)
+# library(scales)
+# library(doBy)
+library(caTools)
+library(car)
+library(rpart)
+library(rpart.plot)
+# Load the package for multinomial modeling
+library(nnet)
+
+```
+
+## Summary of Dataset being used
+
+```{r}
+#loading data
+#
+# read dfa_by_category dataset exported from EDA R markdown file -- EDA_11_Nov.Rmd
+o_dfa_by_category <- read.csv ("../calculated_data/dfa_by_category_eda.csv", header = TRUE)
+
+o_dfa_by_category <- o_dfa_by_category %>%
+                        select(-c(X))
+
+# select required columns to be used for modeling with outcome variable -- DFA(Yes/No)
+dfa_by_category <- o_dfa_by_category %>%              
+  select(c(gender, venue, age, class, is_violent, crime_hist, drug_court, drug_charge, compt_case, le_18, ge_60, dfa, dispo_type))
+summary(dfa_by_category)
+
+```
+
+```{r}
+## munge the data for modeling
+
+# convert output variable dfa into numerical
+# dfa_by_category$dfa <- ifelse(dfa_by_category$dfa=="Yes", 1, 0)
+
+# Remove records where gender is unknown
+dfa_by_category <- dfa_by_category %>%
+   filter(gender != "Unknown")
+
+# Remove records where venue is other
+dfa_by_category <- dfa_by_category %>%
+   filter(venue != "Other")
+
+# Remove records where dispo type is NA
+dfa_by_category <- dfa_by_category %>%
+   filter(!is.na(dispo_type))
+
+# # remove the records where seriousness is empty/NA
+# dfa_by_category <- dfa_by_category[!is.na(dfa_by_category$seriousness),]
+
+dfa_by_category <- droplevels(dfa_by_category)
+# # 
+dfa_by_category$dfa <- as.factor(dfa_by_category$dfa)
+
+## make CLass GM as reference variable
+dfa_by_category$class <- relevel(dfa_by_category$class,"GM")
+
+# #
+is.factor(dfa_by_category$gender)
+is.factor(dfa_by_category$venue)
+is.factor(dfa_by_category$class)
+is.factor(dfa_by_category$crime_hist)
+is.factor(dfa_by_category$total_dfa)
+is.factor(dfa_by_category$dfa)
+is.factor(dfa_by_category$dispo_type)
+
+is.factor(dfa_by_category$age)
+
+
+```
+
+## Split the dataset into train test
+
+```{r}
+# Split the dataset into train and test
+set.seed(123)   #  set seed to ensure you always have same random numbers generated
+
+# feed in your response variable as a vector to get the expected split
+sample = sample.split(dfa_by_category$dispo_type,SplitRatio = 0.8) # splits the data in the ratio mentioned in SplitRatio. After splitting marks these rows as logical TRUE and the the remaining are marked as logical FALSE
+
+train =subset(dfa_by_category, sample ==TRUE) # creates a training dataset named train1 with rows which are marked as TRUE
+test  =subset(dfa_by_category, sample ==FALSE)
+
+```
+
+```{r}
+fit <- rpart(dispo_type ~ ., data = train, method = "class")
+rpart.plot(fit)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
