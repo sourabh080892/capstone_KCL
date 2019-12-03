@@ -1,0 +1,173 @@
+---
+title: "BUAN 5510 - Capstone Project - Linear Regression"
+author: "Keith Castelino and Sourabh Gupta"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document:
+    number_sections: yes
+    theme: united
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(
+	fig.width = 8.5,
+	# include = FALSE,
+	# echo = FALSE,
+	message = FALSE,
+	warning = FALSE
+)
+
+options(tibble.print_max = 40, tibble.print_min = 25)
+
+library(tidyverse)
+library(here)
+library(broom)
+library(caTools)
+library(MLmetrics)
+library(MASS)
+library(tree)
+
+```
+
+# Read in the Data
+
+Read in the dataset.
+
+```{r}
+
+dispo_by_category <- read_csv(here::here("data", "processed", "dispo_by_category.csv"))
+represent_charge_by_file <- read_csv(here::here("data", "processed", "represent_charge_by_file.csv"))
+case_competency_hearing <- read_csv(here::here("data", "processed", "case_competency_hearing.csv"))
+case_trial_set_event <- read_csv(here::here("data", "processed", "case_trial_set_event.csv"))
+defendant_ages <- read_csv(here::here("data", "processed", "defendant_ages.csv"))
+# defendant_seriousness <- read_csv(here::here("data", "processed", "defendant_seriousness.csv"))
+defendant_drug_charge <- read_csv(here::here("data", "processed", "defendant_drug_charge.csv"))
+defendant_drug_court <- read_csv(here::here("data", "processed", "defendant_drug_court.csv"))
+
+base_data <- dispo_by_category %>% 
+  # select(-c(age, age_group)) %>% 
+  left_join(represent_charge_by_file, by = c("file_number" = "file_number")) %>% 
+  left_join(case_competency_hearing, by = c("file_number" = "file_number")) %>% 
+  left_join(case_trial_set_event, by = c("file_number" = "file_number")) %>% 
+  # left_join(defendant_ages %>% select(-c(defendant_id, age_group)), by = c("file_number" = "file_number")) %>% 
+  # left_join(defendant_seriousness %>% select(-defendant_id), by = c("file_number" = "file_number")) %>% 
+  left_join(defendant_drug_charge, by = c("file_number" = "file_number")) %>% 
+  left_join(defendant_drug_court, by = c("file_number" = "file_number")) %>% 
+  replace_na(list(class.x = "Other", serious_cat = "Other", defendant_status = "Other", seriousness = 0, no_of_trial_sets = 0)) %>% 
+  mutate(
+    is_rep_charge = if_else(charge_code.x == charge_code | is.na(charge_code.x), 1, 0),
+    class.x = if_else(class.x %in% c("A", "B", "C"), class.x, "GM"),
+    class_a = if_else(class.x == "A", 1, 0),
+    age_below_18 = if_else(age <= 18, 1, 0),
+    age_below_60 = if_else(age >= 60, 1, 0),
+    is_felony = if_else(class.x %in% c("A", "B", "C"), 1, 0),
+    is_drug_charge = if_else(no_of_drug_charges > 0, 1, 0),
+    is_drug_court = if_else(no_of_drug_court > 0, 1, 0),
+    is_trial_set = if_else(no_of_trial_sets > 0, 1, 0)
+  ) %>% 
+  filter(
+    !is.na(dispo_time_arraign),
+    age_group != "Unknown",
+    gender != "Unknown",
+    class.x %in% c("M", "A", "B", "C", "GM"),
+    defendant_status %in% c("IN", "OUT", "Other"),
+    between(dispo_time_filing, 1, 5 * 365),
+    between(dispo_time_arraign, 1, 5 * 365)
+  ) %>% 
+  mutate_at(c("age_group", "gender", "crime_hist", "class.x", "serious_cat", "defendant_status"), factor) %>% 
+  dplyr::select(
+    file_number, defendant_id,
+    dispo_time_filing, dispo_time_arraign, gender, age, age_group, age_below_18, age_below_60,
+    class.x, class_a, is_felony, seriousness, serious_cat, crime_hist, total_dfa,
+    no_of_drug_charges, no_of_drug_court, no_of_trial_sets,
+    is_drug_charge, is_drug_court, is_trial_set, is_competency_hearing,
+    defendant_status
+  ) %>%
+  rename(charge_class = class.x)
+
+base_data$age_group <- relevel(base_data$age_group, "LE_18")
+base_data$gender <- relevel(base_data$gender, "Female")
+base_data$crime_hist <- relevel(base_data$crime_hist, "No")
+base_data$charge_class <- relevel(base_data$charge_class, "GM")
+base_data$defendant_status <- relevel(base_data$defendant_status, "IN")
+
+```
+
+Load in the functions to display output for the decision tree
+
+```{r}
+
+print_tree <- function(reg_tree, tree_title = "Title required here") {
+  plot(reg_tree)
+  text(reg_tree, pretty = 0)
+  title(main = tree_title)
+}
+
+print_tree_metrics <- function(reg_tree, test_set) {
+  
+  tree_summary <- summary(reg_tree)
+  
+  y_pred <- predict(reg_tree, newdata = test_set)
+  y_true <- test_set$medv
+  
+  mae <- round(MLmetrics::MAE(y_pred, y_true), 4)
+  mape <- round(MLmetrics::MAPE(y_pred, y_true), 4)
+  
+  print(tree_summary)
+  
+  tree_mae <- paste("MAE - Mean Absolute Error:", mae)
+  tree_mape <- paste("MAPE - Mean Absolute Percentage Error:", mape)
+  
+  print(tree_mae)
+  print(tree_mape)
+  
+}
+
+print_cross_val_plot <- function(reg_tree, training_set) {
+  cv_tree <- cv.tree(reg_tree)
+  cv_plot <- plot(
+    cv_tree$size, sqrt(cv_tree$dev / nrow(training_set)), 
+    type = "b", xlab = "Tree Size", ylab = "CV-RMSE",
+    main = "Cross validation plot"
+  )
+  print(cv_plot)
+}
+
+```
+
+Limit the variables in the decision tree to those that are required. Hence, remove the file number values and defendant id's
+
+```{r}
+base_data <- base_data %>% dplyr::select(-c(file_number, defendant_id, dispo_time_arraign))
+```
+
+Split into test and train sets
+
+```{r}
+set.seed(101)
+sample <- sample.split(base_data$dispo_time_filing, SplitRatio = 0.80 * nrow(base_data))
+train <- subset(base_data, sample == TRUE)
+test <- subset(base_data, sample == FALSE)
+```
+
+# Decision Tree and Pruning
+
+```{r}
+
+dispo_tree <- tree(dispo_time_filing ~ ., data = train)
+
+dispo_tree_prune_5 <- prune.tree(dispo_tree, best = 5)
+dispo_tree_prune_7 <- prune.tree(dispo_tree, best = 7)
+
+```
+
+```{r}
+print_tree_metrics(dispo_tree, test)
+print_tree(dispo_tree, "Unpruned Tree")
+print_cross_val_plot(dispo_tree, train)
+```
+
