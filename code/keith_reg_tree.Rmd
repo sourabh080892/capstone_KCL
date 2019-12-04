@@ -30,6 +30,7 @@ library(caTools)
 library(MLmetrics)
 library(MASS)
 library(tree)
+library(fastDummies)
 
 ```
 
@@ -84,8 +85,7 @@ base_data <- dispo_by_category %>%
     dispo_time_filing, dispo_time_arraign, gender, age, age_group, age_below_18, age_below_60,
     class.x, class_a, is_felony, seriousness, serious_cat, crime_hist, total_dfa,
     no_of_drug_charges, no_of_drug_court, no_of_trial_sets,
-    is_drug_charge, is_drug_court, is_trial_set, is_competency_hearing,
-    defendant_status
+    is_drug_charge, is_drug_court, is_trial_set, is_competency_hearing #, defendant_status
   ) %>%
   rename(charge_class = class.x)
 
@@ -93,7 +93,7 @@ base_data$age_group <- relevel(base_data$age_group, "LE_18")
 base_data$gender <- relevel(base_data$gender, "Female")
 base_data$crime_hist <- relevel(base_data$crime_hist, "No")
 base_data$charge_class <- relevel(base_data$charge_class, "GM")
-base_data$defendant_status <- relevel(base_data$defendant_status, "IN")
+# base_data$defendant_status <- relevel(base_data$defendant_status, "IN")
 
 ```
 
@@ -107,12 +107,12 @@ print_tree <- function(reg_tree, tree_title = "Title required here") {
   title(main = tree_title)
 }
 
-print_tree_metrics <- function(reg_tree, test_set) {
+print_tree_metrics <- function(reg_tree, test_set, y_variable) {
   
   tree_summary <- summary(reg_tree)
   
   y_pred <- predict(reg_tree, newdata = test_set)
-  y_true <- test_set$medv
+  y_true <- test_set[ , y_variable] %>% pull()
   
   mae <- round(MLmetrics::MAE(y_pred, y_true), 4)
   mape <- round(MLmetrics::MAPE(y_pred, y_true), 4)
@@ -141,33 +141,93 @@ print_cross_val_plot <- function(reg_tree, training_set) {
 
 Limit the variables in the decision tree to those that are required. Hence, remove the file number values and defendant id's
 
+Set dummy variables to take care of categorical data
+
 ```{r}
+
 base_data <- base_data %>% dplyr::select(-c(file_number, defendant_id, dispo_time_arraign))
+
+# set dummy variables
+
+base_dataset <- fastDummies::dummy_cols(base_data, remove_first_dummy = TRUE) %>% 
+  dplyr::select(-c(gender, age_group, charge_class, serious_cat, crime_hist)) # defendant_status
+
 ```
 
 Split into test and train sets
 
 ```{r}
 set.seed(101)
-sample <- sample.split(base_data$dispo_time_filing, SplitRatio = 0.80 * nrow(base_data))
-train <- subset(base_data, sample == TRUE)
-test <- subset(base_data, sample == FALSE)
+sample <- sample.split(base_dataset$dispo_time_filing, SplitRatio = 0.80 * nrow(base_dataset))
+train <- subset(base_dataset, sample == TRUE)
+test <- subset(base_dataset, sample == FALSE)
 ```
 
 # Decision Tree and Pruning
 
 ```{r}
 
-dispo_tree <- tree(dispo_time_filing ~ ., data = train)
+dispo_tree_1 <- tree(
+  dispo_time_filing ~ 
+    age # + age_below_18 + age_below_60
+    + class_a + is_felony + seriousness + total_dfa
+    + no_of_drug_charges + no_of_drug_court + no_of_trial_sets 
+    + is_drug_charge + is_drug_court + is_trial_set + is_competency_hearing + gender_Female
+    # + `age_group_20-30` + `age_group_30-40` + `age_group_50-60` + age_group_GE_60 + age_group_LE_18
+    + charge_class_C +  charge_class_GM + charge_class_B
+    # + `serious_cat_<=5` + `serious_cat_>10` + serious_cat_Other 
+    + crime_hist_No
+  , 
+  data = train
+)
 
-dispo_tree_prune_5 <- prune.tree(dispo_tree, best = 5)
-dispo_tree_prune_7 <- prune.tree(dispo_tree, best = 7)
+dispo_tree_2 <- tree(
+  dispo_time_filing ~ 
+    age # + age_below_18 + age_below_60
+    + class_a + is_felony + seriousness + total_dfa
+    # + no_of_drug_charges + no_of_drug_court + no_of_trial_sets 
+    + is_drug_charge + is_drug_court + is_trial_set + is_competency_hearing + gender_Female
+    # + `age_group_20-30` + `age_group_30-40` + `age_group_50-60` + age_group_GE_60 + age_group_LE_18
+    + charge_class_C +  charge_class_GM + charge_class_B
+    # + `serious_cat_<=5` + `serious_cat_>10` + serious_cat_Other 
+    + crime_hist_No
+  , 
+  data = train
+)
+
+dispo_tree_prune_5 <- prune.tree(dispo_tree_1, best = 5)
+dispo_tree_prune_7 <- prune.tree(dispo_tree_1, best = 7)
 
 ```
+
+This tree uses both no of quantitative and dummy variables for drug court cases, drug charges and trial setting events.
 
 ```{r}
-print_tree_metrics(dispo_tree, test)
-print_tree(dispo_tree, "Unpruned Tree")
-print_cross_val_plot(dispo_tree, train)
+print_tree_metrics(dispo_tree_1, test, "dispo_time_filing")
+print_tree(dispo_tree_1, "Unpruned Tree")
+print_cross_val_plot(dispo_tree_1, train)
 ```
 
+This tree uses only the dummy variables relating to drug court cases, drug charges and trial setting events
+
+```{r}
+print_tree_metrics(dispo_tree_2, test, "dispo_time_filing")
+print_tree(dispo_tree_2, "Unpruned Tree")
+print_cross_val_plot(dispo_tree_2, train)
+```
+
+Pruning the decision tree to 5 nodes??
+
+```{r include = FALSE}
+print_tree(dispo_tree_prune_5)
+print_tree_metrics(dispo_tree_prune_5, test)
+```
+
+Pruning the decision tree to 7 nodes??
+
+```{r include = FALSE}
+print_tree(dispo_tree_prune_7)
+print_tree_metrics(dispo_tree_prune_7, test)
+```
+
+The cross validation plot shows that a decision tree with 8 nodes explains the relationships best. This is evident in the much higher MAE and MAPE that we find when pruning the tree to 5 or 7 nodes. Hence pruning is unnecessary (Note: output isn't shown here)
