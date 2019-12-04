@@ -11,7 +11,7 @@
 
 <meta name="author" content="Keith Castelino and Sourabh Gupta" />
 
-<meta name="date" content="2019-11-22" />
+<meta name="date" content="2019-12-03" />
 
 <title>BUAN 5510 - Capstone Project - Linear Regression</title>
 
@@ -1550,7 +1550,7 @@ div.tocify {
 
 <h1 class="title toc-ignore">BUAN 5510 - Capstone Project - Linear Regression</h1>
 <h4 class="author">Keith Castelino and Sourabh Gupta</h4>
-<h4 class="date">November 22, 2019</h4>
+<h4 class="date">December 03, 2019</h4>
 
 </div>
 
@@ -1579,7 +1579,10 @@ base_data &lt;- dispo_by_category %&gt;%
   replace_na(list(class.x = &quot;Other&quot;, serious_cat = &quot;Other&quot;, defendant_status = &quot;Other&quot;, seriousness = 0, no_of_trial_sets = 0)) %&gt;% 
   mutate(
     is_rep_charge = if_else(charge_code.x == charge_code | is.na(charge_code.x), 1, 0),
+    class.x = if_else(class.x %in% c(&quot;A&quot;, &quot;B&quot;, &quot;C&quot;), class.x, &quot;GM&quot;),
     class_a = if_else(class.x == &quot;A&quot;, 1, 0),
+    age_below_18 = if_else(age &lt;= 18, 1, 0),
+    age_below_60 = if_else(age &gt;= 60, 1, 0),
     is_felony = if_else(class.x %in% c(&quot;A&quot;, &quot;B&quot;, &quot;C&quot;), 1, 0),
     is_drug_charge = if_else(no_of_drug_charges &gt; 0, 1, 0),
     is_drug_court = if_else(no_of_drug_court &gt; 0, 1, 0),
@@ -1591,13 +1594,13 @@ base_data &lt;- dispo_by_category %&gt;%
     gender != &quot;Unknown&quot;,
     class.x %in% c(&quot;M&quot;, &quot;A&quot;, &quot;B&quot;, &quot;C&quot;, &quot;GM&quot;),
     defendant_status %in% c(&quot;IN&quot;, &quot;OUT&quot;, &quot;Other&quot;),
-    between(dispo_time_filing, 0, 5 * 365),
-    between(dispo_time_arraign, 0, 5 * 365)
+    between(dispo_time_filing, 1, 5 * 365),
+    between(dispo_time_arraign, 1, 5 * 365)
   ) %&gt;% 
   mutate_at(c(&quot;age_group&quot;, &quot;gender&quot;, &quot;crime_hist&quot;, &quot;class.x&quot;, &quot;serious_cat&quot;, &quot;defendant_status&quot;), factor) %&gt;% 
-  select(
+  dplyr::select(
     file_number, defendant_id,
-    dispo_time_filing, dispo_time_arraign, gender, age, age_group,
+    dispo_time_filing, dispo_time_arraign, gender, age, age_group, age_below_18, age_below_60,
     class.x, class_a, is_felony, seriousness, serious_cat, crime_hist, total_dfa,
     no_of_drug_charges, no_of_drug_court, no_of_trial_sets,
     is_drug_charge, is_drug_court, is_trial_set, is_competency_hearing,
@@ -1608,7 +1611,7 @@ base_data &lt;- dispo_by_category %&gt;%
 base_data$age_group &lt;- relevel(base_data$age_group, &quot;LE_18&quot;)
 base_data$gender &lt;- relevel(base_data$gender, &quot;Female&quot;)
 base_data$crime_hist &lt;- relevel(base_data$crime_hist, &quot;No&quot;)
-base_data$charge_class &lt;- relevel(base_data$charge_class, &quot;M&quot;)
+base_data$charge_class &lt;- relevel(base_data$charge_class, &quot;GM&quot;)
 base_data$defendant_status &lt;- relevel(base_data$defendant_status, &quot;IN&quot;)</code></pre>
 <p>Split into test and train sets</p>
 <pre class="r"><code>set.seed(101)
@@ -1681,48 +1684,65 @@ test &lt;- subset(base_data, sample == FALSE)</code></pre>
 # age_group + gender + crime_hist + serious_cat + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
 # age_group + gender + crime_hist + class_a + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge
 # age_group + gender + crime_hist + is_felony + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_charge</code></pre>
+<div id="summary---models-chosen" class="section level2">
+<h2><span class="header-section-number">2.1</span> Summary - Models Chosen</h2>
+<p>Based on our interpretation of the model output, we have concluded that Models 1 and 2 best explain the relationships different variables have with disposition time.</p>
+<ul>
+<li>Those models show the highest R-squared at approx 0.30, the (approx) lowest MAE at 96 and (approx) lowest MAPE at 0.78</li>
+<li>Charge class accounts for some of the variation in disposition time due to cases involving a drug charge.
+<ul>
+<li>Hence the drug charge variable is shown to not be significant in <em>Model 1</em></li>
+</ul></li>
+<li>However, cases that include a drug charge include varying seriousness levels due to other charges being involved in the same case.
+<ul>
+<li>Hence, the variable indicating the case has a drug charge is significant in <em>Model 2</em>, unlike in <em>Model 1</em></li>
+</ul></li>
+</ul>
+</div>
 <div id="model-selection---based-on-filing-date" class="section level2">
-<h2><span class="header-section-number">2.1</span> Model Selection - based on filing date</h2>
+<h2><span class="header-section-number">2.2</span> Model Selection - based on filing date</h2>
 <p>Initialize data frame to record key metrics</p>
 <pre class="r"><code>eval_filing &lt;- data.frame(model_nbr = numeric(), r_squared = numeric(), mae = numeric(), mape = numeric())</code></pre>
 <div id="model-1" class="section level3">
-<h3><span class="header-section-number">2.1.1</span> Model 1</h3>
+<h3><span class="header-section-number">2.2.1</span> Model 1</h3>
 <pre class="r"><code>model_1 &lt;- lm(
   data = train,
   formula = dispo_time_filing ~ 
-    age + gender + crime_hist + charge_class + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+    age + age_below_18 + age_below_60 + gender + crime_hist + charge_class + total_dfa + is_trial_set + is_competency_hearing + is_drug_court + is_drug_charge
 )
 summary(model_1)</code></pre>
 <pre><code>## 
 ## Call:
-## lm(formula = dispo_time_filing ~ age + gender + crime_hist + 
-##     charge_class + total_dfa + is_trial_set + is_competency_hearing + 
-##     is_drug_court, data = train)
+## lm(formula = dispo_time_filing ~ age + age_below_18 + age_below_60 + 
+##     gender + crime_hist + charge_class + total_dfa + is_trial_set + 
+##     is_competency_hearing + is_drug_court + is_drug_charge, data = train)
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -607.17  -84.07  -30.05   49.23 1543.44 
+## -581.56  -83.57  -29.87   49.08 1544.08 
 ## 
 ## Coefficients:
-##                        Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           150.30244   21.08438   7.129 1.04e-12 ***
-## age                     0.44703    0.09479   4.716 2.42e-06 ***
-## genderMale            -17.44389    2.98645  -5.841 5.26e-09 ***
-## crime_histYes         -29.11789    7.02473  -4.145 3.41e-05 ***
-## charge_classA         125.82574   20.05842   6.273 3.61e-10 ***
-## charge_classB          12.84388   19.56188   0.657    0.511    
-## charge_classC          -4.11865   19.54491  -0.211    0.833    
-## charge_classGM        -19.11303   19.62296  -0.974    0.330    
-## total_dfa              55.09153    1.07985  51.018  &lt; 2e-16 ***
-## is_trial_set          114.05552    2.30860  49.405  &lt; 2e-16 ***
-## is_competency_hearing 103.61405    4.81977  21.498  &lt; 2e-16 ***
-## is_drug_court         258.43726    5.79994  44.559  &lt; 2e-16 ***
+##                       Estimate Std. Error t value Pr(&gt;|t|)    
+## (Intercept)           140.6971     8.6933  16.184  &lt; 2e-16 ***
+## age                     0.4684     0.1082   4.328 1.51e-05 ***
+## age_below_18           14.5278     6.7324   2.158   0.0309 *  
+## age_below_60           10.6611     7.8926   1.351   0.1768    
+## genderMale            -19.1451     2.9923  -6.398 1.60e-10 ***
+## crime_histYes         -35.9529     7.2012  -4.993 6.00e-07 ***
+## charge_classA         146.5231     5.4227  27.020  &lt; 2e-16 ***
+## charge_classB          28.6591     3.0448   9.413  &lt; 2e-16 ***
+## charge_classC          12.0062     2.9864   4.020 5.83e-05 ***
+## total_dfa              55.4273     1.1001  50.385  &lt; 2e-16 ***
+## is_trial_set          112.8086     2.3213  48.596  &lt; 2e-16 ***
+## is_competency_hearing 103.4865     4.8474  21.349  &lt; 2e-16 ***
+## is_drug_court         265.0465     5.8607  45.224  &lt; 2e-16 ***
+## is_drug_charge          2.1093     3.0646   0.688   0.4913    
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 157 on 22492 degrees of freedom
-## Multiple R-squared:  0.2966, Adjusted R-squared:  0.2963 
-## F-statistic: 862.4 on 11 and 22492 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 157.1 on 22416 degrees of freedom
+## Multiple R-squared:  0.2965, Adjusted R-squared:  0.2961 
+## F-statistic: 726.9 on 13 and 22416 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_1 &lt;- tidy(model_1)
 y_pred_1 &lt;- predict.lm(model_1, test)
 y_true_1 &lt;- test$dispo_time_filing
@@ -1732,48 +1752,49 @@ mae_1 &lt;- round(MLmetrics::MAE(y_pred_1, y_true_1), 4)
 mape_1 &lt;- round(MLmetrics::MAPE(y_pred_1, y_true_1), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_1)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.2966&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.2965&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_1)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 96.6228&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 96.9083&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_1)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.7964&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.7817&quot;</code></pre>
 <pre class="r"><code>eval_filing[1,] &lt;- c(1, r_sq_1, mae_1, mape_1)</code></pre>
 </div>
 <div id="model-2" class="section level3">
-<h3><span class="header-section-number">2.1.2</span> Model 2</h3>
+<h3><span class="header-section-number">2.2.2</span> Model 2</h3>
 <pre class="r"><code>model_2 &lt;- lm(
   data = train,
   formula = dispo_time_filing ~ 
-    age + gender + crime_hist + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+    age + gender + crime_hist + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_court + is_drug_charge
 )
 summary(model_2)</code></pre>
 <pre><code>## 
 ## Call:
 ## lm(formula = dispo_time_filing ~ age + gender + crime_hist + 
 ##     seriousness + total_dfa + is_trial_set + is_competency_hearing + 
-##     is_drug_court, data = train)
+##     is_drug_court + is_drug_charge, data = train)
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -601.35  -85.33  -29.78   51.00 1524.49 
+## -574.02  -86.03  -29.38   49.92 1527.07 
 ## 
 ## Coefficients:
 ##                        Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           128.38706    8.19845  15.660  &lt; 2e-16 ***
-## age                     0.48184    0.09504   5.070 4.01e-07 ***
-## genderMale            -18.45168    2.99504  -6.161 7.36e-10 ***
-## crime_histYes         -28.61171    7.04371  -4.062 4.88e-05 ***
-## seriousness            10.92210    0.42596  25.641  &lt; 2e-16 ***
-## total_dfa              56.75804    1.08544  52.290  &lt; 2e-16 ***
-## is_trial_set          112.05124    2.33349  48.019  &lt; 2e-16 ***
-## is_competency_hearing 100.57884    4.83889  20.786  &lt; 2e-16 ***
-## is_drug_court         263.00791    5.79648  45.374  &lt; 2e-16 ***
+## (Intercept)           134.57246    8.36623  16.085  &lt; 2e-16 ***
+## age                     0.48163    0.09551   5.043 4.63e-07 ***
+## genderMale            -20.45276    3.00196  -6.813 9.79e-12 ***
+## crime_histYes         -35.91730    7.21307  -4.979 6.42e-07 ***
+## seriousness            11.47284    0.43679  26.266  &lt; 2e-16 ***
+## total_dfa              56.20889    1.10409  50.910  &lt; 2e-16 ***
+## is_trial_set          111.08189    2.34094  47.452  &lt; 2e-16 ***
+## is_competency_hearing 100.33345    4.86281  20.633  &lt; 2e-16 ***
+## is_drug_court         267.66261    5.85724  45.698  &lt; 2e-16 ***
+## is_drug_charge         17.37109    3.05081   5.694 1.26e-08 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 157.3 on 22495 degrees of freedom
-## Multiple R-squared:  0.2933, Adjusted R-squared:  0.293 
-## F-statistic:  1167 on 8 and 22495 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 157.5 on 22420 degrees of freedom
+## Multiple R-squared:  0.2928, Adjusted R-squared:  0.2926 
+## F-statistic:  1032 on 9 and 22420 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_2 &lt;- tidy(model_2)
 y_pred_2 &lt;- predict.lm(model_2, test)
 y_true_2 &lt;- test$dispo_time_filing
@@ -1783,50 +1804,53 @@ mae_2 &lt;- round(MLmetrics::MAE(y_pred_2, y_true_2), 4)
 mape_2 &lt;- round(MLmetrics::MAPE(y_pred_2, y_true_2), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_2)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.2933&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.2928&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_2)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 97.6109&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 97.336&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_2)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.8065&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.7912&quot;</code></pre>
 <pre class="r"><code>eval_filing[2,] &lt;- c(2, r_sq_2, mae_2, mape_2)</code></pre>
 </div>
 <div id="model-3" class="section level3">
-<h3><span class="header-section-number">2.1.3</span> Model 3</h3>
+<h3><span class="header-section-number">2.2.3</span> Model 3</h3>
 <pre class="r"><code>model_3 &lt;- lm(
   data = train,
   formula = dispo_time_filing ~ 
-    age + gender + crime_hist + serious_cat + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+    age + age_below_18 + age_below_60 + gender + crime_hist + serious_cat + total_dfa + is_trial_set + is_competency_hearing + is_drug_court + is_drug_charge
 )
 summary(model_3)</code></pre>
 <pre><code>## 
 ## Call:
-## lm(formula = dispo_time_filing ~ age + gender + crime_hist + 
-##     serious_cat + total_dfa + is_trial_set + is_competency_hearing + 
-##     is_drug_court, data = train)
+## lm(formula = dispo_time_filing ~ age + age_below_18 + age_below_60 + 
+##     gender + crime_hist + serious_cat + total_dfa + is_trial_set + 
+##     is_competency_hearing + is_drug_court + is_drug_charge, data = train)
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -595.43  -84.00  -29.51   50.21 1542.21 
+## -594.98  -84.13  -29.67   49.61 1543.24 
 ## 
 ## Coefficients:
-##                        Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           149.54563    8.01588  18.656  &lt; 2e-16 ***
-## age                     0.40212    0.09428   4.265 2.01e-05 ***
-## genderMale            -17.72924    2.97906  -5.951 2.70e-09 ***
-## crime_histYes         -31.06539    6.99098  -4.444 8.89e-06 ***
-## serious_cat&gt;10        209.60478    7.49874  27.952  &lt; 2e-16 ***
-## serious_cat5-10        64.72667    4.47665  14.459  &lt; 2e-16 ***
-## serious_catOther       15.27185    4.33852   3.520 0.000432 ***
-## total_dfa              55.88282    1.07415  52.025  &lt; 2e-16 ***
-## is_trial_set          112.96909    2.30128  49.090  &lt; 2e-16 ***
-## is_competency_hearing 105.43124    4.79826  21.973  &lt; 2e-16 ***
-## is_drug_court         264.24431    5.76309  45.851  &lt; 2e-16 ***
+##                       Estimate Std. Error t value Pr(&gt;|t|)    
+## (Intercept)           155.9681     8.3287  18.727  &lt; 2e-16 ***
+## age                     0.4161     0.1078   3.860 0.000114 ***
+## age_below_18           16.5375     6.7031   2.467 0.013627 *  
+## age_below_60            9.5342     7.8668   1.212 0.225539    
+## genderMale            -19.2154     2.9855  -6.436 1.25e-10 ***
+## crime_histYes         -37.4460     7.1704  -5.222 1.78e-07 ***
+## serious_cat&gt;10        212.4243     7.4927  28.351  &lt; 2e-16 ***
+## serious_cat5-10        61.9954     4.5123  13.739  &lt; 2e-16 ***
+## serious_catOther       15.9819     4.3319   3.689 0.000225 ***
+## total_dfa              55.8603     1.0960  50.969  &lt; 2e-16 ***
+## is_trial_set          112.1040     2.3142  48.442  &lt; 2e-16 ***
+## is_competency_hearing 104.7618     4.8262  21.707  &lt; 2e-16 ***
+## is_drug_court         270.6313     5.8244  46.465  &lt; 2e-16 ***
+## is_drug_charge          5.6355     2.9779   1.892 0.058443 .  
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 156.4 on 22493 degrees of freedom
-## Multiple R-squared:  0.3019, Adjusted R-squared:  0.3016 
-## F-statistic: 972.6 on 10 and 22493 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 156.5 on 22416 degrees of freedom
+## Multiple R-squared:  0.3014, Adjusted R-squared:  0.301 
+## F-statistic: 743.9 on 13 and 22416 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_3 &lt;- tidy(model_3)
 y_pred_3 &lt;- predict.lm(model_3, test)
 y_true_3 &lt;- test$dispo_time_filing
@@ -1836,15 +1860,15 @@ mae_3 &lt;- round(MLmetrics::MAE(y_pred_3, y_true_3), 4)
 mape_3 &lt;- round(MLmetrics::MAPE(y_pred_3, y_true_3), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_3)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.3019&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.3014&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_3)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 96.6579&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 96.8028&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_3)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.7988&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.7869&quot;</code></pre>
 <pre class="r"><code>eval_filing[3,] &lt;- c(3, r_sq_3, mae_3, mape_3)</code></pre>
 </div>
 <div id="model-4" class="section level3">
-<h3><span class="header-section-number">2.1.4</span> Model 4</h3>
+<h3><span class="header-section-number">2.2.4</span> Model 4</h3>
 <pre class="r"><code>model_4 &lt;- lm(
   data = train,
   formula = dispo_time_filing ~ 
@@ -1859,26 +1883,26 @@ summary(model_4)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -599.31  -83.96  -30.14   50.59 1530.95 
+## -589.84  -84.33  -29.80   50.22 1530.99 
 ## 
 ## Coefficients:
 ##                        Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           134.47725    8.19415  16.411  &lt; 2e-16 ***
-## age                     0.48248    0.09478   5.090 3.60e-07 ***
-## genderMale            -18.28735    2.98687  -6.123 9.36e-10 ***
-## crime_histYes         -28.28912    7.02448  -4.027 5.66e-05 ***
-## class_a                74.35036    6.65639  11.170  &lt; 2e-16 ***
-## seriousness             6.64904    0.57166  11.631  &lt; 2e-16 ***
-## total_dfa              56.63991    1.08252  52.322  &lt; 2e-16 ***
-## is_trial_set          111.69434    2.32732  47.993  &lt; 2e-16 ***
-## is_competency_hearing 101.44749    4.82626  21.020  &lt; 2e-16 ***
-## is_drug_court         263.49099    5.78076  45.581  &lt; 2e-16 ***
+## (Intercept)           144.15165    8.35745  17.248  &lt; 2e-16 ***
+## age                     0.51162    0.09504   5.383 7.38e-08 ***
+## genderMale            -19.84840    2.99160  -6.635 3.33e-11 ***
+## crime_histYes         -36.08639    7.19309  -5.017 5.29e-07 ***
+## class_a                83.58106    6.67255  12.526  &lt; 2e-16 ***
+## seriousness             6.12649    0.57247  10.702  &lt; 2e-16 ***
+## total_dfa              56.76630    1.09520  51.832  &lt; 2e-16 ***
+## is_trial_set          110.42077    2.33418  47.306  &lt; 2e-16 ***
+## is_competency_hearing 100.71920    4.84704  20.780  &lt; 2e-16 ***
+## is_drug_court         270.05253    5.83355  46.293  &lt; 2e-16 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 156.9 on 22494 degrees of freedom
-## Multiple R-squared:  0.2972, Adjusted R-squared:  0.2969 
-## F-statistic:  1057 on 9 and 22494 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 157.1 on 22420 degrees of freedom
+## Multiple R-squared:  0.2967, Adjusted R-squared:  0.2965 
+## F-statistic:  1051 on 9 and 22420 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_4 &lt;- tidy(model_4)
 y_pred_4 &lt;- predict.lm(model_4, test)
 y_true_4 &lt;- test$dispo_time_filing
@@ -1888,15 +1912,15 @@ mae_4 &lt;- round(MLmetrics::MAE(y_pred_4, y_true_4), 4)
 mape_4 &lt;- round(MLmetrics::MAPE(y_pred_4, y_true_4), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_4)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.2972&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.2967&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_4)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 96.9543&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 97.2635&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_4)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.7995&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.788&quot;</code></pre>
 <pre class="r"><code>eval_filing[4,] &lt;- c(4, r_sq_4, mae_4, mape_4)</code></pre>
 </div>
 <div id="model-5" class="section level3">
-<h3><span class="header-section-number">2.1.5</span> Model 5</h3>
+<h3><span class="header-section-number">2.2.5</span> Model 5</h3>
 <pre class="r"><code>model_5 &lt;- lm(
   data = train,
   formula = dispo_time_filing ~ 
@@ -1911,26 +1935,26 @@ summary(model_5)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -601.20  -85.16  -29.81   51.02 1524.73 
+## -587.94  -85.51  -29.70   50.49 1524.17 
 ## 
 ## Coefficients:
 ##                        Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           130.30637    8.39557  15.521  &lt; 2e-16 ***
-## age                     0.48566    0.09511   5.106 3.31e-07 ***
-## genderMale            -18.50619    2.99547  -6.178 6.60e-10 ***
-## crime_histYes         -28.67259    7.04393  -4.071 4.71e-05 ***
-## is_felony              -3.19802    3.01378  -1.061    0.289    
-## seriousness            11.16092    0.48176  23.167  &lt; 2e-16 ***
-## total_dfa              56.91358    1.09529  51.962  &lt; 2e-16 ***
-## is_trial_set          111.90540    2.33753  47.873  &lt; 2e-16 ***
-## is_competency_hearing 100.57721    4.83888  20.785  &lt; 2e-16 ***
-## is_drug_court         263.42287    5.80964  45.342  &lt; 2e-16 ***
+## (Intercept)           140.25689    8.57214  16.362  &lt; 2e-16 ***
+## age                     0.52375    0.09541   5.490 4.07e-08 ***
+## genderMale            -19.91273    3.00219  -6.633 3.37e-11 ***
+## crime_histYes         -36.26992    7.21819  -5.025 5.08e-07 ***
+## is_felony              -5.90986    3.02769  -1.952    0.051 .  
+## seriousness            11.36686    0.48174  23.596  &lt; 2e-16 ***
+## total_dfa              57.14084    1.10852  51.547  &lt; 2e-16 ***
+## is_trial_set          110.53529    2.34603  47.116  &lt; 2e-16 ***
+## is_competency_hearing  99.25461    4.86212  20.414  &lt; 2e-16 ***
+## is_drug_court         270.16257    5.86685  46.049  &lt; 2e-16 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 157.3 on 22494 degrees of freedom
-## Multiple R-squared:  0.2933, Adjusted R-squared:  0.293 
-## F-statistic:  1037 on 9 and 22494 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 157.6 on 22420 degrees of freedom
+## Multiple R-squared:  0.2919, Adjusted R-squared:  0.2917 
+## F-statistic:  1027 on 9 and 22420 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_5 &lt;- tidy(model_5)
 y_pred_5 &lt;- predict.lm(model_5, test)
 y_true_5 &lt;- test$dispo_time_filing
@@ -1940,15 +1964,15 @@ mae_5 &lt;- round(MLmetrics::MAE(y_pred_5, y_true_5), 4)
 mape_5 &lt;- round(MLmetrics::MAPE(y_pred_5, y_true_5), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_5)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.2933&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.2919&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_5)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 97.595&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 97.5337&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_5)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.8063&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.7942&quot;</code></pre>
 <pre class="r"><code>eval_filing[5,] &lt;- c(5, r_sq_5, mae_5, mape_5)</code></pre>
 </div>
 <div id="model-6" class="section level3">
-<h3><span class="header-section-number">2.1.6</span> Model 6</h3>
+<h3><span class="header-section-number">2.2.6</span> Model 6</h3>
 <pre class="r"><code>model_6 &lt;- lm(
   data = train,
   formula = dispo_time_filing ~ 
@@ -1963,32 +1987,31 @@ summary(model_6)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -610.08  -84.10  -30.41   48.99 1546.72 
+## -581.99  -83.87  -29.87   49.03 1546.29 
 ## 
 ## Coefficients:
 ##                       Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)            168.327     21.688   7.761 8.76e-15 ***
-## age_group20-30          -7.457      6.479  -1.151    0.250    
-## age_group30-40          -7.690      6.605  -1.164    0.244    
-## age_group40-50           5.880      6.858   0.857    0.391    
-## age_group50-60           6.332      7.351   0.861    0.389    
-## age_groupGE_60          14.080      9.888   1.424    0.154    
-## genderMale             -17.492      2.987  -5.856 4.80e-09 ***
-## crime_histYes          -28.450      7.031  -4.046 5.22e-05 ***
-## charge_classA          124.750     20.063   6.218 5.13e-10 ***
-## charge_classB           12.878     19.560   0.658    0.510    
-## charge_classC           -3.828     19.543  -0.196    0.845    
-## charge_classGM         -19.144     19.620  -0.976    0.329    
-## total_dfa               55.205      1.080  51.095  &lt; 2e-16 ***
-## is_trial_set           114.196      2.308  49.478  &lt; 2e-16 ***
-## is_competency_hearing  103.847      4.819  21.551  &lt; 2e-16 ***
-## is_drug_court          258.333      5.800  44.542  &lt; 2e-16 ***
+## (Intercept)            162.821     10.023  16.244  &lt; 2e-16 ***
+## age_group20-30         -10.421      6.622  -1.574   0.1156    
+## age_group30-40         -10.327      6.746  -1.531   0.1258    
+## age_group40-50           4.054      6.996   0.579   0.5623    
+## age_group50-60           2.518      7.481   0.337   0.7364    
+## age_groupGE_60          18.406     10.014   1.838   0.0661 .  
+## genderMale             -19.074      2.991  -6.377 1.84e-10 ***
+## crime_histYes          -35.571      7.201  -4.940 7.88e-07 ***
+## charge_classA          146.638      5.418  27.065  &lt; 2e-16 ***
+## charge_classB           29.118      3.009   9.677  &lt; 2e-16 ***
+## charge_classC           12.737      2.902   4.388 1.15e-05 ***
+## total_dfa               55.561      1.094  50.800  &lt; 2e-16 ***
+## is_trial_set           112.727      2.316  48.680  &lt; 2e-16 ***
+## is_competency_hearing  103.425      4.837  21.383  &lt; 2e-16 ***
+## is_drug_court          265.019      5.855  45.267  &lt; 2e-16 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 156.9 on 22488 degrees of freedom
-## Multiple R-squared:  0.297,  Adjusted R-squared:  0.2966 
-## F-statistic: 633.5 on 15 and 22488 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 157.1 on 22415 degrees of freedom
+## Multiple R-squared:  0.2968, Adjusted R-squared:  0.2964 
+## F-statistic: 675.8 on 14 and 22415 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_6 &lt;- tidy(model_6)
 y_pred_6 &lt;- predict.lm(model_6, test)
 y_true_6 &lt;- test$dispo_time_filing
@@ -1998,15 +2021,15 @@ mae_6 &lt;- round(MLmetrics::MAE(y_pred_6, y_true_6), 4)
 mape_6 &lt;- round(MLmetrics::MAPE(y_pred_6, y_true_6), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_6)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.297&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.2968&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_6)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 96.5756&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 96.9358&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_6)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.7945&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.7817&quot;</code></pre>
 <pre class="r"><code>eval_filing[6,] &lt;- c(6, r_sq_6, mae_6, mape_6)</code></pre>
 </div>
 <div id="model-7" class="section level3">
-<h3><span class="header-section-number">2.1.7</span> Model 7</h3>
+<h3><span class="header-section-number">2.2.7</span> Model 7</h3>
 <pre class="r"><code>model_7 &lt;- lm(
   data = train,
   formula = dispo_time_filing ~ 
@@ -2021,29 +2044,29 @@ summary(model_7)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -604.51  -85.16  -30.05   50.69 1528.34 
+## -585.17  -85.70  -29.93   50.37 1527.59 
 ## 
 ## Coefficients:
 ##                       Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           150.1769     9.7050  15.474  &lt; 2e-16 ***
-## age_group20-30        -10.2395     6.4812  -1.580    0.114    
-## age_group30-40        -10.3968     6.6047  -1.574    0.115    
-## age_group40-50          4.1385     6.8639   0.603    0.547    
-## age_group50-60          4.8287     7.3601   0.656    0.512    
-## age_groupGE_60         13.1533     9.9078   1.328    0.184    
-## genderMale            -18.5037     2.9953  -6.178 6.62e-10 ***
-## crime_histYes         -27.8549     7.0491  -3.952 7.79e-05 ***
-## seriousness            10.8199     0.4274  25.316  &lt; 2e-16 ***
-## total_dfa              56.8913     1.0860  52.387  &lt; 2e-16 ***
-## is_trial_set          112.2235     2.3326  48.111  &lt; 2e-16 ***
-## is_competency_hearing 100.8987     4.8376  20.857  &lt; 2e-16 ***
-## is_drug_court         262.9109     5.7959  45.361  &lt; 2e-16 ***
+## (Intercept)           162.2972     9.9090  16.379  &lt; 2e-16 ***
+## age_group20-30        -13.8434     6.6321  -2.087   0.0369 *  
+## age_group30-40        -13.7198     6.7517  -2.032   0.0422 *  
+## age_group40-50          1.6049     7.0094   0.229   0.8189    
+## age_group50-60          0.3617     7.4982   0.048   0.9615    
+## age_groupGE_60         16.7997    10.0427   1.673   0.0944 .  
+## genderMale            -19.7670     3.0019  -6.585 4.65e-11 ***
+## crime_histYes         -34.8787     7.2243  -4.828 1.39e-06 ***
+## seriousness            10.8042     0.4278  25.254  &lt; 2e-16 ***
+## total_dfa              57.0305     1.0997  51.859  &lt; 2e-16 ***
+## is_trial_set          111.0336     2.3417  47.415  &lt; 2e-16 ***
+## is_competency_hearing  99.6614     4.8610  20.502  &lt; 2e-16 ***
+## is_drug_court         269.2132     5.8526  45.999  &lt; 2e-16 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 157.3 on 22491 degrees of freedom
-## Multiple R-squared:  0.2937, Adjusted R-squared:  0.2934 
-## F-statistic: 779.5 on 12 and 22491 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 157.5 on 22417 degrees of freedom
+## Multiple R-squared:  0.2924, Adjusted R-squared:  0.2921 
+## F-statistic: 772.1 on 12 and 22417 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_7 &lt;- tidy(model_7)
 y_pred_7 &lt;- predict.lm(model_7, test)
 y_true_7 &lt;- test$dispo_time_filing
@@ -2053,15 +2076,15 @@ mae_7 &lt;- round(MLmetrics::MAE(y_pred_7, y_true_7), 4)
 mape_7 &lt;- round(MLmetrics::MAPE(y_pred_7, y_true_7), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_7)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.2937&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.2924&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_7)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 97.5735&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 97.4823&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_7)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.8043&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.7928&quot;</code></pre>
 <pre class="r"><code>eval_filing[7,] &lt;- c(7, r_sq_7, mae_7, mape_7)</code></pre>
 </div>
 <div id="model-8" class="section level3">
-<h3><span class="header-section-number">2.1.8</span> Model 8</h3>
+<h3><span class="header-section-number">2.2.8</span> Model 8</h3>
 <pre class="r"><code>model_8 &lt;- lm(
   data = train,
   formula = dispo_time_filing ~ 
@@ -2076,31 +2099,31 @@ summary(model_8)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -598.46  -83.92  -29.34   50.01 1545.73 
+## -599.94  -84.02  -29.40   49.64 1544.64 
 ## 
 ## Coefficients:
 ##                       Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)            167.374      9.518  17.584  &lt; 2e-16 ***
-## age_group20-30          -8.190      6.449  -1.270  0.20412    
-## age_group30-40          -8.910      6.570  -1.356  0.17509    
-## age_group40-50           4.064      6.822   0.596  0.55140    
-## age_group50-60           4.943      7.318   0.676  0.49933    
-## age_groupGE_60          10.391      9.842   1.056  0.29112    
-## genderMale             -17.798      2.979  -5.973 2.36e-09 ***
-## crime_histYes          -30.396      6.997  -4.344 1.41e-05 ***
-## serious_cat&gt;10         208.579      7.511  27.770  &lt; 2e-16 ***
-## serious_cat5-10         63.834      4.492  14.210  &lt; 2e-16 ***
-## serious_catOther        14.838      4.340   3.419  0.00063 ***
-## total_dfa               56.002      1.075  52.105  &lt; 2e-16 ***
-## is_trial_set           113.099      2.301  49.159  &lt; 2e-16 ***
-## is_competency_hearing  105.641      4.797  22.021  &lt; 2e-16 ***
-## is_drug_court          264.109      5.763  45.830  &lt; 2e-16 ***
+## (Intercept)           179.8255     9.7243  18.492  &lt; 2e-16 ***
+## age_group20-30        -12.5928     6.5936  -1.910  0.05617 .  
+## age_group30-40        -12.7002     6.7125  -1.892  0.05850 .  
+## age_group40-50          0.4136     6.9615   0.059  0.95262    
+## age_group50-60         -0.2476     7.4496  -0.033  0.97349    
+## age_groupGE_60         12.6958     9.9748   1.273  0.20311    
+## genderMale            -19.0836     2.9849  -6.393 1.65e-10 ***
+## crime_histYes         -37.0187     7.1712  -5.162 2.46e-07 ***
+## serious_cat&gt;10        211.6827     7.4859  28.278  &lt; 2e-16 ***
+## serious_cat5-10        61.4651     4.5074  13.636  &lt; 2e-16 ***
+## serious_catOther       14.9550     4.3154   3.466  0.00053 ***
+## total_dfa              56.1682     1.0881  51.618  &lt; 2e-16 ***
+## is_trial_set          111.8782     2.3093  48.447  &lt; 2e-16 ***
+## is_competency_hearing 104.4058     4.8184  21.668  &lt; 2e-16 ***
+## is_drug_court         270.9645     5.8178  46.575  &lt; 2e-16 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 156.3 on 22489 degrees of freedom
-## Multiple R-squared:  0.3023, Adjusted R-squared:  0.3018 
-## F-statistic: 695.9 on 14 and 22489 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 156.5 on 22415 degrees of freedom
+## Multiple R-squared:  0.3015, Adjusted R-squared:  0.3011 
+## F-statistic: 691.2 on 14 and 22415 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_8 &lt;- tidy(model_8)
 y_pred_8 &lt;- predict.lm(model_8, test)
 y_true_8 &lt;- test$dispo_time_filing
@@ -2110,15 +2133,15 @@ mae_8 &lt;- round(MLmetrics::MAE(y_pred_8, y_true_8), 4)
 mape_8 &lt;- round(MLmetrics::MAPE(y_pred_8, y_true_8), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_8)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.3023&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.3015&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_8)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 96.591&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 96.8347&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_8)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.7966&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.7873&quot;</code></pre>
 <pre class="r"><code>eval_filing[8,] &lt;- c(8, r_sq_8, mae_8, mape_8)</code></pre>
 </div>
 <div id="model-9" class="section level3">
-<h3><span class="header-section-number">2.1.9</span> Model 9</h3>
+<h3><span class="header-section-number">2.2.9</span> Model 9</h3>
 <pre class="r"><code>model_9 &lt;- lm(
   data = train,
   formula = dispo_time_filing ~ 
@@ -2133,30 +2156,30 @@ summary(model_9)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -602.27  -84.46  -29.96   50.44 1534.38 
+## -592.63  -84.45  -29.80   50.09 1534.37 
 ## 
 ## Coefficients:
 ##                       Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           152.2367     9.6809  15.725  &lt; 2e-16 ***
-## age_group20-30         -5.9868     6.4755  -0.925    0.355    
-## age_group30-40         -5.9840     6.5993  -0.907    0.365    
-## age_group40-50          8.0901     6.8550   1.180    0.238    
-## age_group50-60          8.6338     7.3486   1.175    0.240    
-## age_groupGE_60         16.2210     9.8854   1.641    0.101    
-## genderMale            -18.3379     2.9873  -6.139 8.47e-10 ***
-## crime_histYes         -27.6789     7.0303  -3.937 8.27e-05 ***
-## class_a                73.4057     6.6686  11.008  &lt; 2e-16 ***
-## seriousness             6.6273     0.5716  11.594  &lt; 2e-16 ***
-## total_dfa              56.7525     1.0832  52.395  &lt; 2e-16 ***
-## is_trial_set          111.8406     2.3267  48.069  &lt; 2e-16 ***
-## is_competency_hearing 101.7015     4.8253  21.077  &lt; 2e-16 ***
-## is_drug_court         263.3588     5.7806  45.559  &lt; 2e-16 ***
+## (Intercept)           165.6213     9.8794  16.764  &lt; 2e-16 ***
+## age_group20-30         -9.5778     6.6188  -1.447   0.1479    
+## age_group30-40         -9.2230     6.7389  -1.369   0.1711    
+## age_group40-50          5.5018     6.9930   0.787   0.4314    
+## age_group50-60          4.0840     7.4792   0.546   0.5850    
+## age_groupGE_60         19.3330    10.0110   1.931   0.0535 .  
+## genderMale            -19.7970     2.9918  -6.617 3.75e-11 ***
+## crime_histYes         -35.0660     7.2000  -4.870 1.12e-06 ***
+## class_a                82.4706     6.6821  12.342  &lt; 2e-16 ***
+## seriousness             6.0905     0.5724  10.640  &lt; 2e-16 ***
+## total_dfa              56.9139     1.0961  51.925  &lt; 2e-16 ***
+## is_trial_set          110.6166     2.3341  47.391  &lt; 2e-16 ***
+## is_competency_hearing 101.0537     4.8460  20.853  &lt; 2e-16 ***
+## is_drug_court         269.8811     5.8332  46.266  &lt; 2e-16 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 156.9 on 22490 degrees of freedom
-## Multiple R-squared:  0.2975, Adjusted R-squared:  0.2971 
-## F-statistic: 732.7 on 13 and 22490 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 157 on 22416 degrees of freedom
+## Multiple R-squared:  0.2972, Adjusted R-squared:  0.2968 
+## F-statistic: 729.2 on 13 and 22416 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_9 &lt;- tidy(model_9)
 y_pred_9 &lt;- predict.lm(model_9, test)
 y_true_9 &lt;- test$dispo_time_filing
@@ -2166,15 +2189,15 @@ mae_9 &lt;- round(MLmetrics::MAE(y_pred_9, y_true_9), 4)
 mape_9 &lt;- round(MLmetrics::MAPE(y_pred_9, y_true_9), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_9)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.2975&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.2972&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_9)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 96.9104&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 97.2543&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_9)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.7976&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.7876&quot;</code></pre>
 <pre class="r"><code>eval_filing[9,] &lt;- c(9, r_sq_9, mae_9, mape_9)</code></pre>
 </div>
 <div id="model-10" class="section level3">
-<h3><span class="header-section-number">2.1.10</span> Model 10</h3>
+<h3><span class="header-section-number">2.2.10</span> Model 10</h3>
 <pre class="r"><code>model_10 &lt;- lm(
   data = train,
   formula = dispo_time_filing ~ 
@@ -2189,30 +2212,30 @@ summary(model_10)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -604.38  -85.10  -30.09   50.53 1528.49 
+## -590.17  -85.46  -29.84   50.44 1527.88 
 ## 
 ## Coefficients:
 ##                       Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)            151.586      9.838  15.409  &lt; 2e-16 ***
-## age_group20-30          -9.971      6.489  -1.537    0.124    
-## age_group30-40         -10.061      6.616  -1.521    0.128    
-## age_group40-50           4.472      6.875   0.651    0.515    
-## age_group50-60           5.149      7.369   0.699    0.485    
-## age_groupGE_60          13.385      9.911   1.350    0.177    
-## genderMale             -18.549      2.996  -6.192 6.05e-10 ***
-## crime_histYes          -27.918      7.050  -3.960 7.51e-05 ***
-## is_felony               -2.640      3.017  -0.875    0.382    
-## seriousness             11.018      0.484  22.768  &lt; 2e-16 ***
-## total_dfa               57.018      1.096  52.044  &lt; 2e-16 ***
-## is_trial_set           112.102      2.337  47.973  &lt; 2e-16 ***
-## is_competency_hearing  100.895      4.838  20.856  &lt; 2e-16 ***
-## is_drug_court          263.252      5.809  45.318  &lt; 2e-16 ***
+## (Intercept)           165.1891    10.0520  16.433  &lt; 2e-16 ***
+## age_group20-30        -13.3717     6.6375  -2.015   0.0440 *  
+## age_group30-40        -13.0860     6.7616  -1.935   0.0530 .  
+## age_group40-50          2.1811     7.0172   0.311   0.7559    
+## age_group50-60          0.9229     7.5051   0.123   0.9021    
+## age_groupGE_60         17.1392    10.0442   1.706   0.0880 .  
+## genderMale            -19.8523     3.0021  -6.613 3.86e-11 ***
+## crime_histYes         -35.0677     7.2248  -4.854 1.22e-06 ***
+## is_felony              -5.1812     3.0313  -1.709   0.0874 .  
+## seriousness            11.1902     0.4838  23.132  &lt; 2e-16 ***
+## total_dfa              57.2748     1.1089  51.649  &lt; 2e-16 ***
+## is_trial_set          110.7924     2.3459  47.228  &lt; 2e-16 ***
+## is_competency_hearing  99.6677     4.8608  20.504  &lt; 2e-16 ***
+## is_drug_court         269.8998     5.8661  46.010  &lt; 2e-16 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 157.3 on 22490 degrees of freedom
-## Multiple R-squared:  0.2938, Adjusted R-squared:  0.2934 
-## F-statistic: 719.6 on 13 and 22490 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 157.5 on 22416 degrees of freedom
+## Multiple R-squared:  0.2925, Adjusted R-squared:  0.2921 
+## F-statistic:   713 on 13 and 22416 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_10 &lt;- tidy(model_10)
 y_pred_10 &lt;- predict.lm(model_10, test)
 y_true_10 &lt;- test$dispo_time_filing
@@ -2222,15 +2245,15 @@ mae_10 &lt;- round(MLmetrics::MAE(y_pred_10, y_true_10), 4)
 mape_10 &lt;- round(MLmetrics::MAPE(y_pred_10, y_true_10), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_10)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.2938&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.2925&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_10)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 97.5613&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 97.5108&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_10)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.8041&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.7935&quot;</code></pre>
 <pre class="r"><code>eval_filing[10,] &lt;- c(10, r_sq_10, mae_10, mape_10)</code></pre>
 </div>
 <div id="model-11" class="section level3">
-<h3><span class="header-section-number">2.1.11</span> Model 11</h3>
+<h3><span class="header-section-number">2.2.11</span> Model 11</h3>
 <pre class="r"><code>model_11 &lt;- lm(
   data = train,
   formula = dispo_time_filing ~ 
@@ -2245,28 +2268,27 @@ summary(model_11)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -625.75  -89.85  -35.20   46.14 1522.71 
+## -629.36  -89.63  -34.93   46.45 1522.42 
 ## 
 ## Coefficients:
 ##                        Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           163.42562   21.99565   7.430 1.13e-13 ***
-## age                     0.40257    0.09917   4.059 4.94e-05 ***
-## genderMale            -21.01784    3.11547  -6.746 1.55e-11 ***
-## crime_histYes         -40.11320    7.32380  -5.477 4.37e-08 ***
-## charge_classA         129.85524   20.92301   6.206 5.52e-10 ***
-## charge_classB          23.44815   20.40849   1.149   0.2506    
-## charge_classC           0.21988   20.40012   0.011   0.9914    
-## charge_classGM        -17.11783   20.46828  -0.836   0.4030    
-## total_dfa              64.74761    1.11054  58.303  &lt; 2e-16 ***
-## is_trial_set          109.02586    2.41023  45.235  &lt; 2e-16 ***
-## is_competency_hearing  96.91955    5.03409  19.253  &lt; 2e-16 ***
-## is_drug_charge          7.36120    3.19274   2.306   0.0211 *  
+## (Intercept)           156.36574    8.93026  17.510  &lt; 2e-16 ***
+## age                     0.42046    0.09954   4.224 2.41e-05 ***
+## genderMale            -22.44083    3.12468  -7.182 7.10e-13 ***
+## crime_histYes         -47.29581    7.51153  -6.296 3.10e-10 ***
+## charge_classA         150.20633    5.64280  26.619  &lt; 2e-16 ***
+## charge_classB          38.27597    3.17309  12.063  &lt; 2e-16 ***
+## charge_classC          14.50569    3.11867   4.651 3.32e-06 ***
+## total_dfa              65.28412    1.12551  58.004  &lt; 2e-16 ***
+## is_trial_set          107.47958    2.42032  44.407  &lt; 2e-16 ***
+## is_competency_hearing  97.40153    5.06168  19.243  &lt; 2e-16 ***
+## is_drug_charge          8.26596    3.19594   2.586   0.0097 ** 
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 163.7 on 22492 degrees of freedom
-## Multiple R-squared:  0.2347, Adjusted R-squared:  0.2344 
-## F-statistic: 627.2 on 11 and 22492 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 164.1 on 22419 degrees of freedom
+## Multiple R-squared:  0.2322, Adjusted R-squared:  0.2318 
+## F-statistic: 677.9 on 10 and 22419 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_11 &lt;- tidy(model_11)
 y_pred_11 &lt;- predict.lm(model_11, test)
 y_true_11 &lt;- test$dispo_time_filing
@@ -2276,15 +2298,15 @@ mae_11 &lt;- round(MLmetrics::MAE(y_pred_11, y_true_11), 4)
 mape_11 &lt;- round(MLmetrics::MAPE(y_pred_11, y_true_11), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_11)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.2347&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.2322&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_11)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 99.608&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 99.8307&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_11)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.8294&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.8021&quot;</code></pre>
 <pre class="r"><code>eval_filing[11,] &lt;- c(11, r_sq_11, mae_11, mape_11)</code></pre>
 </div>
 <div id="model-12" class="section level3">
-<h3><span class="header-section-number">2.1.12</span> Model 12</h3>
+<h3><span class="header-section-number">2.2.12</span> Model 12</h3>
 <pre class="r"><code>model_12 &lt;- lm(
   data = train,
   formula = dispo_time_filing ~ 
@@ -2299,25 +2321,25 @@ summary(model_12)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -634.02  -90.97  -34.56   48.23 1505.17 
+## -636.62  -91.34  -34.63   47.42 1503.92 
 ## 
 ## Coefficients:
 ##                        Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           146.86348    8.54918  17.179  &lt; 2e-16 ***
-## age                     0.38867    0.09937   3.911 9.21e-05 ***
-## genderMale            -22.57625    3.12630  -7.221 5.31e-13 ***
-## crime_histYes         -40.55983    7.34402  -5.523 3.37e-08 ***
-## seriousness            11.45497    0.45565  25.140  &lt; 2e-16 ***
-## total_dfa              65.95337    1.11565  59.117  &lt; 2e-16 ***
-## is_trial_set          107.62292    2.43302  44.234  &lt; 2e-16 ***
-## is_competency_hearing  95.17700    5.05047  18.845  &lt; 2e-16 ***
-## is_drug_charge         24.45021    3.17885   7.692 1.51e-14 ***
+## (Intercept)           154.96171    8.73455  17.741  &lt; 2e-16 ***
+## age                     0.40666    0.09984   4.073 4.66e-05 ***
+## genderMale            -23.65751    3.13772  -7.540 4.89e-14 ***
+## crime_histYes         -47.76794    7.53647  -6.338 2.37e-10 ***
+## seriousness            11.50012    0.45666  25.183  &lt; 2e-16 ***
+## total_dfa              66.31207    1.13095  58.634  &lt; 2e-16 ***
+## is_trial_set          106.27296    2.44500  43.465  &lt; 2e-16 ***
+## is_competency_hearing  94.73731    5.08251  18.640  &lt; 2e-16 ***
+## is_drug_charge         24.55693    3.18542   7.709 1.32e-14 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 164.2 on 22495 degrees of freedom
-## Multiple R-squared:  0.2306, Adjusted R-squared:  0.2303 
-## F-statistic: 842.8 on 8 and 22495 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 164.7 on 22421 degrees of freedom
+## Multiple R-squared:  0.227,  Adjusted R-squared:  0.2267 
+## F-statistic: 822.9 on 8 and 22421 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_12 &lt;- tidy(model_12)
 y_pred_12 &lt;- predict.lm(model_12, test)
 y_true_12 &lt;- test$dispo_time_filing
@@ -2327,15 +2349,15 @@ mae_12 &lt;- round(MLmetrics::MAE(y_pred_12, y_true_12), 4)
 mape_12 &lt;- round(MLmetrics::MAPE(y_pred_12, y_true_12), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_12)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.2306&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.227&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_12)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 100.5051&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 100.4774&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_12)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.8393&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.8135&quot;</code></pre>
 <pre class="r"><code>eval_filing[12,] &lt;- c(12, r_sq_12, mae_12, mape_12)</code></pre>
 </div>
 <div id="model-13" class="section level3">
-<h3><span class="header-section-number">2.1.13</span> Model 13</h3>
+<h3><span class="header-section-number">2.2.13</span> Model 13</h3>
 <pre class="r"><code>model_13 &lt;- lm(
   data = train,
   formula = dispo_time_filing ~ 
@@ -2350,27 +2372,27 @@ summary(model_13)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -636.56  -89.34  -34.68   46.96 1520.32 
+## -639.61  -89.29  -34.64   46.41 1519.05 
 ## 
 ## Coefficients:
 ##                        Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           170.88712    8.36517  20.428  &lt; 2e-16 ***
-## age                     0.32566    0.09888   3.293 0.000991 ***
-## genderMale            -21.26089    3.11423  -6.827 8.89e-12 ***
-## crime_histYes         -43.65654    7.30300  -5.978 2.29e-09 ***
-## serious_cat&gt;10        208.11145    7.84546  26.526  &lt; 2e-16 ***
-## serious_cat5-10        60.60849    4.68257  12.943  &lt; 2e-16 ***
-## serious_catOther       13.93715    4.55203   3.062 0.002203 ** 
-## total_dfa              65.48034    1.10931  59.028  &lt; 2e-16 ***
-## is_trial_set          108.71087    2.40791  45.147  &lt; 2e-16 ***
-## is_competency_hearing  99.33777    5.02098  19.785  &lt; 2e-16 ***
-## is_drug_charge         11.89665    3.10320   3.834 0.000127 ***
+## (Intercept)           179.12581    8.55760  20.932  &lt; 2e-16 ***
+## age                     0.33219    0.09936   3.343 0.000829 ***
+## genderMale            -22.37114    3.12506  -7.159 8.40e-13 ***
+## crime_histYes         -50.45811    7.49561  -6.732 1.72e-11 ***
+## serious_cat&gt;10        211.57818    7.83290  27.011  &lt; 2e-16 ***
+## serious_cat5-10        58.03359    4.70875  12.325  &lt; 2e-16 ***
+## serious_catOther       13.16920    4.53433   2.904 0.003684 ** 
+## total_dfa              65.84687    1.12438  58.563  &lt; 2e-16 ***
+## is_trial_set          107.47049    2.41936  44.421  &lt; 2e-16 ***
+## is_competency_hearing  98.94950    5.05183  19.587  &lt; 2e-16 ***
+## is_drug_charge         12.26900    3.11193   3.943 8.09e-05 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 163.5 on 22493 degrees of freedom
-## Multiple R-squared:  0.2371, Adjusted R-squared:  0.2368 
-## F-statistic: 699.1 on 10 and 22493 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 163.9 on 22419 degrees of freedom
+## Multiple R-squared:  0.2339, Adjusted R-squared:  0.2335 
+## F-statistic: 684.3 on 10 and 22419 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_13 &lt;- tidy(model_13)
 y_pred_13 &lt;- predict.lm(model_13, test)
 y_true_13 &lt;- test$dispo_time_filing
@@ -2380,15 +2402,15 @@ mae_13 &lt;- round(MLmetrics::MAE(y_pred_13, y_true_13), 4)
 mape_13 &lt;- round(MLmetrics::MAPE(y_pred_13, y_true_13), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_13)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.2371&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.2339&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_13)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 99.7061&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 100.0156&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_13)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.8333&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.8107&quot;</code></pre>
 <pre class="r"><code>eval_filing[13,] &lt;- c(13, r_sq_13, mae_13, mape_13)</code></pre>
 </div>
 <div id="model-14" class="section level3">
-<h3><span class="header-section-number">2.1.14</span> Model 14</h3>
+<h3><span class="header-section-number">2.2.14</span> Model 14</h3>
 <pre class="r"><code>model_14 &lt;- lm(
   data = train,
   formula = dispo_time_filing ~ 
@@ -2403,26 +2425,26 @@ summary(model_14)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -636.88  -90.16  -34.67   47.55 1510.16 
+## -640.16  -90.32  -34.52   46.92 1509.58 
 ## 
 ## Coefficients:
 ##                        Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           152.81618    8.55524  17.862  &lt; 2e-16 ***
-## age                     0.39669    0.09918   4.000 6.36e-05 ***
-## genderMale            -22.29804    3.12025  -7.146 9.19e-13 ***
-## crime_histYes         -40.34673    7.32953  -5.505 3.74e-08 ***
-## class_a                66.53386    7.00266   9.501  &lt; 2e-16 ***
-## seriousness             7.51348    0.61554  12.206  &lt; 2e-16 ***
-## total_dfa              66.01662    1.11346  59.290  &lt; 2e-16 ***
-## is_trial_set          107.21665    2.42858  44.148  &lt; 2e-16 ***
-## is_competency_hearing  95.70317    5.04078  18.986  &lt; 2e-16 ***
-## is_drug_charge         20.74339    3.19646   6.489 8.79e-11 ***
+## (Intercept)           162.33663    8.73954  18.575  &lt; 2e-16 ***
+## age                     0.40940    0.09959   4.111 3.96e-05 ***
+## genderMale            -23.54664    3.12980  -7.523 5.54e-14 ***
+## crime_histYes         -47.85004    7.51740  -6.365 1.99e-10 ***
+## class_a                75.35981    7.02829  10.722  &lt; 2e-16 ***
+## seriousness             7.03987    0.61687  11.412  &lt; 2e-16 ***
+## total_dfa              66.42351    1.12814  58.879  &lt; 2e-16 ***
+## is_trial_set          105.84154    2.43914  43.393  &lt; 2e-16 ***
+## is_competency_hearing  95.78862    5.07059  18.891  &lt; 2e-16 ***
+## is_drug_charge         20.43994    3.20047   6.387 1.73e-10 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 163.8 on 22494 degrees of freedom
-## Multiple R-squared:  0.2337, Adjusted R-squared:  0.2334 
-## F-statistic: 762.1 on 9 and 22494 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 164.2 on 22420 degrees of freedom
+## Multiple R-squared:  0.2309, Adjusted R-squared:  0.2306 
+## F-statistic:   748 on 9 and 22420 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_14 &lt;- tidy(model_14)
 y_pred_14 &lt;- predict.lm(model_14, test)
 y_true_14 &lt;- test$dispo_time_filing
@@ -2432,15 +2454,15 @@ mae_14 &lt;- round(MLmetrics::MAE(y_pred_14, y_true_14), 4)
 mape_14 &lt;- round(MLmetrics::MAPE(y_pred_14, y_true_14), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_14)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.2337&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.2309&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_14)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 99.9194&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 100.2483&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_14)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.8332&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.809&quot;</code></pre>
 <pre class="r"><code>eval_filing[14,] &lt;- c(14, r_sq_14, mae_14, mape_14)</code></pre>
 </div>
 <div id="model-15" class="section level3">
-<h3><span class="header-section-number">2.1.15</span> Model 15</h3>
+<h3><span class="header-section-number">2.2.15</span> Model 15</h3>
 <pre class="r"><code>model_15 &lt;- lm(
   data = train,
   formula = dispo_time_filing ~ 
@@ -2455,26 +2477,26 @@ summary(model_15)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -634.71  -90.89  -34.62   48.26 1505.62 
+## -637.87  -91.20  -34.43   47.38 1504.74 
 ## 
 ## Coefficients:
 ##                        Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           148.68327    8.75801  16.977  &lt; 2e-16 ***
-## age                     0.39003    0.09938   3.925 8.71e-05 ***
-## genderMale            -22.68020    3.12819  -7.250 4.29e-13 ***
-## crime_histYes         -40.62304    7.34433  -5.531 3.22e-08 ***
-## is_felony              -3.22529    3.36927  -0.957    0.338    
-## seriousness            11.73313    0.54042  21.711  &lt; 2e-16 ***
-## total_dfa              66.07755    1.12316  58.832  &lt; 2e-16 ***
-## is_trial_set          107.49328    2.43679  44.113  &lt; 2e-16 ***
-## is_competency_hearing  95.24126    5.05093  18.856  &lt; 2e-16 ***
-## is_drug_charge         25.64148    3.41376   7.511 6.08e-14 ***
+## (Intercept)           158.45442    8.95596  17.693  &lt; 2e-16 ***
+## age                     0.40794    0.09984   4.086 4.41e-05 ***
+## genderMale            -23.84067    3.13930  -7.594 3.22e-14 ***
+## crime_histYes         -47.95224    7.53684  -6.362 2.02e-10 ***
+## is_felony              -5.96720    3.38438  -1.763   0.0779 .  
+## seriousness            12.00908    0.54023  22.229  &lt; 2e-16 ***
+## total_dfa              66.54028    1.13828  58.457  &lt; 2e-16 ***
+## is_trial_set          106.02354    2.44898  43.293  &lt; 2e-16 ***
+## is_competency_hearing  94.87547    5.08287  18.666  &lt; 2e-16 ***
+## is_drug_charge         26.73201    3.41582   7.826 5.26e-15 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 164.2 on 22494 degrees of freedom
-## Multiple R-squared:  0.2306, Adjusted R-squared:  0.2303 
-## F-statistic: 749.2 on 9 and 22494 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 164.6 on 22420 degrees of freedom
+## Multiple R-squared:  0.2271, Adjusted R-squared:  0.2268 
+## F-statistic: 731.9 on 9 and 22420 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_15 &lt;- tidy(model_15)
 y_pred_15 &lt;- predict.lm(model_15, test)
 y_true_15 &lt;- test$dispo_time_filing
@@ -2484,15 +2506,15 @@ mae_15 &lt;- round(MLmetrics::MAE(y_pred_15, y_true_15), 4)
 mape_15 &lt;- round(MLmetrics::MAPE(y_pred_15, y_true_15), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_15)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.2306&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.2271&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_15)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 100.4683&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 100.4879&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_15)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.8389&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.814&quot;</code></pre>
 <pre class="r"><code>eval_filing[15,] &lt;- c(15, r_sq_15, mae_15, mape_15)</code></pre>
 </div>
 <div id="model-16" class="section level3">
-<h3><span class="header-section-number">2.1.16</span> Model 16</h3>
+<h3><span class="header-section-number">2.2.16</span> Model 16</h3>
 <pre class="r"><code>model_16 &lt;- lm(
   data = train,
   formula = dispo_time_filing ~ 
@@ -2507,32 +2529,31 @@ summary(model_16)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -631.92  -90.18  -35.25   46.23 1526.99 
+## -636.32  -89.71  -35.00   46.30 1527.03 
 ## 
 ## Coefficients:
 ##                       Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           178.3898    22.6244   7.885 3.29e-15 ***
-## age_group20-30         -5.0135     6.7591  -0.742   0.4583    
-## age_group30-40         -6.9701     6.8935  -1.011   0.3120    
-## age_group40-50          7.3923     7.1612   1.032   0.3020    
-## age_group50-60          8.4659     7.6764   1.103   0.2701    
-## age_groupGE_60         12.2805    10.3170   1.190   0.2339    
-## genderMale            -21.0970     3.1158  -6.771 1.31e-11 ***
-## crime_histYes         -39.4990     7.3297  -5.389 7.16e-08 ***
-## charge_classA         128.9916    20.9273   6.164 7.22e-10 ***
-## charge_classB          23.4777    20.4054   1.151   0.2499    
-## charge_classC           0.4799    20.3971   0.024   0.9812    
-## charge_classGM        -17.1517    20.4650  -0.838   0.4020    
-## total_dfa              64.8508     1.1110  58.372  &lt; 2e-16 ***
-## is_trial_set          109.1428     2.4094  45.298  &lt; 2e-16 ***
-## is_competency_hearing  97.1311     5.0328  19.300  &lt; 2e-16 ***
-## is_drug_charge          7.4501     3.1916   2.334   0.0196 *  
+## (Intercept)            175.822     10.474  16.787  &lt; 2e-16 ***
+## age_group20-30          -9.873      6.919  -1.427  0.15358    
+## age_group30-40         -12.110      7.050  -1.718  0.08584 .  
+## age_group40-50           3.041      7.315   0.416  0.67759    
+## age_group50-60           2.856      7.823   0.365  0.71503    
+## age_groupGE_60          14.359     10.461   1.373  0.16990    
+## genderMale             -22.415      3.125  -7.174 7.52e-13 ***
+## crime_histYes          -46.135      7.519  -6.136 8.60e-10 ***
+## charge_classA          149.055      5.662  26.326  &lt; 2e-16 ***
+## charge_classB           38.380      3.172  12.098  &lt; 2e-16 ***
+## charge_classC           14.941      3.120   4.789 1.69e-06 ***
+## total_dfa               65.434      1.126  58.112  &lt; 2e-16 ***
+## is_trial_set           107.658      2.420  44.484  &lt; 2e-16 ***
+## is_competency_hearing   97.741      5.060  19.316  &lt; 2e-16 ***
+## is_drug_charge           8.503      3.195   2.661  0.00779 ** 
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 163.7 on 22488 degrees of freedom
-## Multiple R-squared:  0.2352, Adjusted R-squared:  0.2347 
-## F-statistic: 461.1 on 15 and 22488 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 164.1 on 22415 degrees of freedom
+## Multiple R-squared:  0.2328, Adjusted R-squared:  0.2323 
+## F-statistic: 485.8 on 14 and 22415 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_16 &lt;- tidy(model_16)
 y_pred_16 &lt;- predict.lm(model_16, test)
 y_true_16 &lt;- test$dispo_time_filing
@@ -2542,15 +2563,15 @@ mae_16 &lt;- round(MLmetrics::MAE(y_pred_16, y_true_16), 4)
 mape_16 &lt;- round(MLmetrics::MAPE(y_pred_16, y_true_16), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_16)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.2352&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.2328&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_16)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 99.5814&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 99.8483&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_16)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.8276&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.8015&quot;</code></pre>
 <pre class="r"><code>eval_filing[16,] &lt;- c(16, r_sq_16, mae_16, mape_16)</code></pre>
 </div>
 <div id="model-17" class="section level3">
-<h3><span class="header-section-number">2.1.17</span> Model 17</h3>
+<h3><span class="header-section-number">2.2.17</span> Model 17</h3>
 <pre class="r"><code>model_17 &lt;- lm(
   data = train,
   formula = dispo_time_filing ~ 
@@ -2565,29 +2586,29 @@ summary(model_17)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -640.56  -91.40  -34.77   47.94 1510.17 
+## -643.99  -91.70  -34.69   47.32 1509.40 
 ## 
 ## Coefficients:
 ##                       Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           164.8377    10.1280  16.275  &lt; 2e-16 ***
-## age_group20-30         -8.3455     6.7626  -1.234    0.217    
-## age_group30-40        -10.8510     6.8932  -1.574    0.115    
-## age_group40-50          3.9317     7.1658   0.549    0.583    
-## age_group50-60          5.0361     7.6841   0.655    0.512    
-## age_groupGE_60         10.0000    10.3383   0.967    0.333    
-## genderMale            -22.6560     3.1264  -7.247 4.41e-13 ***
-## crime_histYes         -39.7965     7.3494  -5.415 6.19e-08 ***
-## seriousness            11.3758     0.4571  24.890  &lt; 2e-16 ***
-## total_dfa              66.0845     1.1161  59.212  &lt; 2e-16 ***
-## is_trial_set          107.7581     2.4320  44.309  &lt; 2e-16 ***
-## is_competency_hearing  95.4563     5.0489  18.906  &lt; 2e-16 ***
-## is_drug_charge         24.5819     3.1776   7.736 1.07e-14 ***
+## (Intercept)           178.2345    10.3536  17.215  &lt; 2e-16 ***
+## age_group20-30        -13.8850     6.9291  -2.004   0.0451 *  
+## age_group30-40        -16.7599     7.0557  -2.375   0.0175 *  
+## age_group40-50         -1.1634     7.3268  -0.159   0.8738    
+## age_group50-60         -1.2834     7.8384  -0.164   0.8699    
+## age_groupGE_60         11.5692    10.4917   1.103   0.2702    
+## genderMale            -23.6339     3.1373  -7.533 5.14e-14 ***
+## crime_histYes         -46.4121     7.5426  -6.153 7.72e-10 ***
+## seriousness            11.3912     0.4579  24.879  &lt; 2e-16 ***
+## total_dfa              66.4984     1.1314  58.775  &lt; 2e-16 ***
+## is_trial_set          106.4812     2.4445  43.560  &lt; 2e-16 ***
+## is_competency_hearing  95.1920     5.0806  18.736  &lt; 2e-16 ***
+## is_drug_charge         24.8579     3.1842   7.807 6.13e-15 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 164.1 on 22491 degrees of freedom
-## Multiple R-squared:  0.2312, Adjusted R-squared:  0.2308 
-## F-statistic: 563.6 on 12 and 22491 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 164.6 on 22417 degrees of freedom
+## Multiple R-squared:  0.2277, Adjusted R-squared:  0.2273 
+## F-statistic: 550.9 on 12 and 22417 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_17 &lt;- tidy(model_17)
 y_pred_17 &lt;- predict.lm(model_17, test)
 y_true_17 &lt;- test$dispo_time_filing
@@ -2597,15 +2618,15 @@ mae_17 &lt;- round(MLmetrics::MAE(y_pred_17, y_true_17), 4)
 mape_17 &lt;- round(MLmetrics::MAPE(y_pred_17, y_true_17), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_17)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.2312&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.2277&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_17)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 100.4583&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 100.4723&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_17)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.837&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.8127&quot;</code></pre>
 <pre class="r"><code>eval_filing[17,] &lt;- c(17, r_sq_17, mae_17, mape_17)</code></pre>
 </div>
 <div id="model-18" class="section level3">
-<h3><span class="header-section-number">2.1.18</span> Model 18</h3>
+<h3><span class="header-section-number">2.2.18</span> Model 18</h3>
 <pre class="r"><code>model_18 &lt;- lm(
   data = train,
   formula = dispo_time_filing ~ 
@@ -2620,31 +2641,31 @@ summary(model_18)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -642.49  -89.27  -34.81   46.82 1525.00 
+## -646.04  -89.59  -34.77   46.25 1523.88 
 ## 
 ## Coefficients:
 ##                       Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)            185.735      9.941  18.684  &lt; 2e-16 ***
-## age_group20-30          -6.695      6.744  -0.993 0.320839    
-## age_group30-40          -9.567      6.874  -1.392 0.163999    
-## age_group40-50           3.926      7.141   0.550 0.582495    
-## age_group50-60           5.276      7.660   0.689 0.490994    
-## age_groupGE_60           7.006     10.292   0.681 0.496056    
-## genderMale             -21.360      3.114  -6.858 7.15e-12 ***
-## crime_histYes          -43.000      7.309  -5.883 4.09e-09 ***
-## serious_cat&gt;10         207.228      7.858  26.373  &lt; 2e-16 ***
-## serious_cat5-10         59.889      4.698  12.747  &lt; 2e-16 ***
-## serious_catOther        13.538      4.553   2.973 0.002951 ** 
-## total_dfa               65.593      1.110  59.107  &lt; 2e-16 ***
-## is_trial_set           108.818      2.407  45.207  &lt; 2e-16 ***
-## is_competency_hearing   99.534      5.020  19.829  &lt; 2e-16 ***
-## is_drug_charge          12.028      3.102   3.877 0.000106 ***
+## (Intercept)            199.764     10.171  19.641  &lt; 2e-16 ***
+## age_group20-30         -13.184      6.905  -1.909  0.05623 .  
+## age_group30-40         -16.072      7.032  -2.285  0.02230 *  
+## age_group40-50          -2.463      7.297  -0.337  0.73575    
+## age_group50-60          -1.911      7.809  -0.245  0.80665    
+## age_groupGE_60           7.107     10.444   0.680  0.49624    
+## genderMale             -22.375      3.125  -7.160 8.32e-13 ***
+## crime_histYes          -49.220      7.503  -6.560 5.49e-11 ***
+## serious_cat&gt;10         210.210      7.844  26.800  &lt; 2e-16 ***
+## serious_cat5-10         56.874      4.721  12.046  &lt; 2e-16 ***
+## serious_catOther        12.563      4.535   2.770  0.00561 ** 
+## total_dfa               66.012      1.125  58.685  &lt; 2e-16 ***
+## is_trial_set           107.650      2.419  44.499  &lt; 2e-16 ***
+## is_competency_hearing   99.294      5.050  19.661  &lt; 2e-16 ***
+## is_drug_charge          12.570      3.111   4.040 5.36e-05 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 163.4 on 22489 degrees of freedom
-## Multiple R-squared:  0.2376, Adjusted R-squared:  0.2371 
-## F-statistic: 500.6 on 14 and 22489 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 163.9 on 22415 degrees of freedom
+## Multiple R-squared:  0.2345, Adjusted R-squared:  0.234 
+## F-statistic: 490.5 on 14 and 22415 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_18 &lt;- tidy(model_18)
 y_pred_18 &lt;- predict.lm(model_18, test)
 y_true_18 &lt;- test$dispo_time_filing
@@ -2654,15 +2675,15 @@ mae_18 &lt;- round(MLmetrics::MAE(y_pred_18, y_true_18), 4)
 mape_18 &lt;- round(MLmetrics::MAPE(y_pred_18, y_true_18), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_18)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.2376&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.2345&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_18)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 99.6581&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 99.9665&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_18)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.8312&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.8097&quot;</code></pre>
 <pre class="r"><code>eval_filing[18,] &lt;- c(18, r_sq_18, mae_18, mape_18)</code></pre>
 </div>
 <div id="model-19" class="section level3">
-<h3><span class="header-section-number">2.1.19</span> Model 19</h3>
+<h3><span class="header-section-number">2.2.19</span> Model 19</h3>
 <pre class="r"><code>model_19 &lt;- lm(
   data = train,
   formula = dispo_time_filing ~ 
@@ -2677,30 +2698,30 @@ summary(model_19)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -643.03  -90.09  -34.72   47.11 1514.77 
+## -647.07  -90.09  -34.46   46.59 1514.57 
 ## 
 ## Coefficients:
 ##                       Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           167.2545    10.1119  16.540  &lt; 2e-16 ***
-## age_group20-30         -4.4273     6.7626  -0.655    0.513    
-## age_group30-40         -6.7055     6.8942  -0.973    0.331    
-## age_group40-50          7.7593     7.1638   1.083    0.279    
-## age_group50-60          8.7652     7.6797   1.141    0.254    
-## age_groupGE_60         12.9079    10.3232   1.250    0.211    
-## genderMale            -22.3789     3.1205  -7.172 7.65e-13 ***
-## crime_histYes         -39.7230     7.3353  -5.415 6.18e-08 ***
-## class_a                65.6194     7.0161   9.353  &lt; 2e-16 ***
-## seriousness             7.5114     0.6155  12.204  &lt; 2e-16 ***
-## total_dfa              66.1256     1.1139  59.362  &lt; 2e-16 ***
-## is_trial_set          107.3311     2.4277  44.210  &lt; 2e-16 ***
-## is_competency_hearing  95.9274     5.0395  19.035  &lt; 2e-16 ***
-## is_drug_charge         20.9037     3.1958   6.541 6.24e-11 ***
+## (Intercept)           181.8828    10.3342  17.600  &lt; 2e-16 ***
+## age_group20-30         -9.9492     6.9223  -1.437   0.1507    
+## age_group30-40        -12.5012     7.0501  -1.773   0.0762 .  
+## age_group40-50          2.6441     7.3179   0.361   0.7179    
+## age_group50-60          2.4154     7.8272   0.309   0.7576    
+## age_groupGE_60         13.9655    10.4686   1.334   0.1822    
+## genderMale            -23.5245     3.1297  -7.517 5.83e-14 ***
+## crime_histYes         -46.6796     7.5242  -6.204 5.60e-10 ***
+## class_a                74.0656     7.0388  10.522  &lt; 2e-16 ***
+## seriousness             7.0300     0.6168  11.398  &lt; 2e-16 ***
+## total_dfa              66.5827     1.1287  58.992  &lt; 2e-16 ***
+## is_trial_set          106.0231     2.4389  43.472  &lt; 2e-16 ***
+## is_competency_hearing  96.1657     5.0691  18.971  &lt; 2e-16 ***
+## is_drug_charge         20.7789     3.2000   6.493 8.57e-11 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 163.8 on 22490 degrees of freedom
-## Multiple R-squared:  0.2342, Adjusted R-squared:  0.2337 
-## F-statistic: 528.9 on 13 and 22490 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 164.2 on 22416 degrees of freedom
+## Multiple R-squared:  0.2315, Adjusted R-squared:  0.2311 
+## F-statistic: 519.5 on 13 and 22416 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_19 &lt;- tidy(model_19)
 y_pred_19 &lt;- predict.lm(model_19, test)
 y_true_19 &lt;- test$dispo_time_filing
@@ -2710,15 +2731,15 @@ mae_19 &lt;- round(MLmetrics::MAE(y_pred_19, y_true_19), 4)
 mape_19 &lt;- round(MLmetrics::MAPE(y_pred_19, y_true_19), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_19)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.2342&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.2315&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_19)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 99.8893&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 100.2445&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_19)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.8314&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.8083&quot;</code></pre>
 <pre class="r"><code>eval_filing[19,] &lt;- c(19, r_sq_19, mae_19, mape_19)</code></pre>
 </div>
 <div id="model-20" class="section level3">
-<h3><span class="header-section-number">2.1.20</span> Model 20</h3>
+<h3><span class="header-section-number">2.2.20</span> Model 20</h3>
 <pre class="r"><code>model_20 &lt;- lm(
   data = train,
   formula = dispo_time_filing ~ 
@@ -2733,30 +2754,30 @@ summary(model_20)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -641.11  -91.22  -34.86   48.01 1510.50 
+## -645.01  -91.39  -34.61   47.52 1510.03 
 ## 
 ## Coefficients:
 ##                       Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           166.1507    10.2608  16.193  &lt; 2e-16 ***
-## age_group20-30         -8.0986     6.7697  -1.196    0.232    
-## age_group30-40        -10.5609     6.9028  -1.530    0.126    
-## age_group40-50          4.1952     7.1735   0.585    0.559    
-## age_group50-60          5.2787     7.6902   0.686    0.492    
-## age_groupGE_60         10.1882    10.3411   0.985    0.325    
-## genderMale            -22.7426     3.1283  -7.270 3.71e-13 ***
-## crime_histYes         -39.8601     7.3499  -5.423 5.91e-08 ***
-## is_felony              -2.6921     3.3730  -0.798    0.425    
-## seriousness            11.6095     0.5428  21.389  &lt; 2e-16 ***
-## total_dfa              66.1865     1.1234  58.918  &lt; 2e-16 ***
-## is_trial_set          107.6480     2.4359  44.192  &lt; 2e-16 ***
-## is_competency_hearing  95.5067     5.0494  18.915  &lt; 2e-16 ***
-## is_drug_charge         25.5747     3.4124   7.495 6.89e-14 ***
+## (Intercept)           180.9063    10.4980  17.232  &lt; 2e-16 ***
+## age_group20-30        -13.4572     6.9344  -1.941   0.0523 .  
+## age_group30-40        -16.2307     7.0638  -2.298   0.0216 *  
+## age_group40-50         -0.7301     7.3320  -0.100   0.9207    
+## age_group50-60         -0.8825     7.8425  -0.113   0.9104    
+## age_groupGE_60         11.8384    10.4928   1.128   0.2592    
+## genderMale            -23.7938     3.1389  -7.580 3.58e-14 ***
+## crime_histYes         -46.5992     7.5433  -6.178 6.62e-10 ***
+## is_felony              -5.2118     3.3877  -1.538   0.1240    
+## seriousness            11.8382     0.5423  21.831  &lt; 2e-16 ***
+## total_dfa              66.6940     1.1385  58.581  &lt; 2e-16 ***
+## is_trial_set          106.2595     2.4486  43.395  &lt; 2e-16 ***
+## is_competency_hearing  95.3050     5.0810  18.757  &lt; 2e-16 ***
+## is_drug_charge         26.7537     3.4143   7.836 4.86e-15 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 164.1 on 22490 degrees of freedom
-## Multiple R-squared:  0.2312, Adjusted R-squared:  0.2308 
-## F-statistic: 520.3 on 13 and 22490 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 164.6 on 22416 degrees of freedom
+## Multiple R-squared:  0.2278, Adjusted R-squared:  0.2274 
+## F-statistic: 508.8 on 13 and 22416 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_20 &lt;- tidy(model_20)
 y_pred_20 &lt;- predict.lm(model_20, test)
 y_true_20 &lt;- test$dispo_time_filing
@@ -2766,83 +2787,83 @@ mae_20 &lt;- round(MLmetrics::MAE(y_pred_20, y_true_20), 4)
 mape_20 &lt;- round(MLmetrics::MAPE(y_pred_20, y_true_20), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_20)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.2312&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.2278&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_20)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 100.4297&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 100.4777&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_20)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.8367&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 0.8131&quot;</code></pre>
 <pre class="r"><code>eval_filing[20,] &lt;- c(20, r_sq_20, mae_20, mape_20)</code></pre>
 </div>
 <div id="conclusions" class="section level3">
-<h3><span class="header-section-number">2.1.21</span> Conclusions</h3>
+<h3><span class="header-section-number">2.2.21</span> Conclusions</h3>
 <pre class="r"><code>eval_filing</code></pre>
 <pre><code>##    model_nbr r_squared      mae   mape
-## 1          1    0.2966  96.6228 0.7964
-## 2          2    0.2933  97.6109 0.8065
-## 3          3    0.3019  96.6579 0.7988
-## 4          4    0.2972  96.9543 0.7995
-## 5          5    0.2933  97.5950 0.8063
-## 6          6    0.2970  96.5756 0.7945
-## 7          7    0.2937  97.5735 0.8043
-## 8          8    0.3023  96.5910 0.7966
-## 9          9    0.2975  96.9104 0.7976
-## 10        10    0.2938  97.5613 0.8041
-## 11        11    0.2347  99.6080 0.8294
-## 12        12    0.2306 100.5051 0.8393
-## 13        13    0.2371  99.7061 0.8333
-## 14        14    0.2337  99.9194 0.8332
-## 15        15    0.2306 100.4683 0.8389
-## 16        16    0.2352  99.5814 0.8276
-## 17        17    0.2312 100.4583 0.8370
-## 18        18    0.2376  99.6581 0.8312
-## 19        19    0.2342  99.8893 0.8314
-## 20        20    0.2312 100.4297 0.8367</code></pre>
-<p>RRR</p>
-<p>XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXx</p>
+## 1          1    0.2965  96.9083 0.7817
+## 2          2    0.2928  97.3360 0.7912
+## 3          3    0.3014  96.8028 0.7869
+## 4          4    0.2967  97.2635 0.7880
+## 5          5    0.2919  97.5337 0.7942
+## 6          6    0.2968  96.9358 0.7817
+## 7          7    0.2924  97.4823 0.7928
+## 8          8    0.3015  96.8347 0.7873
+## 9          9    0.2972  97.2543 0.7876
+## 10        10    0.2925  97.5108 0.7935
+## 11        11    0.2322  99.8307 0.8021
+## 12        12    0.2270 100.4774 0.8135
+## 13        13    0.2339 100.0156 0.8107
+## 14        14    0.2309 100.2483 0.8090
+## 15        15    0.2271 100.4879 0.8140
+## 16        16    0.2328  99.8483 0.8015
+## 17        17    0.2277 100.4723 0.8127
+## 18        18    0.2345  99.9665 0.8097
+## 19        19    0.2315 100.2445 0.8083
+## 20        20    0.2278 100.4777 0.8131</code></pre>
 </div>
 </div>
 <div id="model-selection---based-on-arraignment-date" class="section level2">
-<h2><span class="header-section-number">2.2</span> Model Selection - based on arraignment date</h2>
+<h2><span class="header-section-number">2.3</span> Model Selection - based on arraignment date</h2>
 <p>Initialize data frame to record key metrics</p>
 <pre class="r"><code>eval_arraign &lt;- data.frame(model_nbr = numeric(), r_squared = numeric(), mae = numeric(), mape = numeric())</code></pre>
 <div id="model-1-1" class="section level3">
-<h3><span class="header-section-number">2.2.1</span> Model 1</h3>
+<h3><span class="header-section-number">2.3.1</span> Model 1</h3>
 <pre class="r"><code>model_1 &lt;- lm(
   data = train,
   formula = dispo_time_arraign ~ 
-    age + gender + crime_hist + charge_class + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+    age + age_below_18 + age_below_60 + gender + crime_hist + charge_class + total_dfa + is_trial_set + is_competency_hearing + is_drug_court + is_drug_charge
 )
 summary(model_1)</code></pre>
 <pre><code>## 
 ## Call:
-## lm(formula = dispo_time_arraign ~ age + gender + crime_hist + 
-##     charge_class + total_dfa + is_trial_set + is_competency_hearing + 
-##     is_drug_court, data = train)
+## lm(formula = dispo_time_arraign ~ age + age_below_18 + age_below_60 + 
+##     gender + crime_hist + charge_class + total_dfa + is_trial_set + 
+##     is_competency_hearing + is_drug_court + is_drug_charge, data = train)
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -582.08  -77.06  -25.53   50.10 1597.79 
+## -539.81  -76.78  -24.85   49.61 1599.85 
 ## 
 ## Coefficients:
 ##                        Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           138.17102   18.77825   7.358 1.93e-13 ***
-## age                     0.32891    0.08442   3.896 9.80e-05 ***
-## genderMale            -18.93461    2.65981  -7.119 1.12e-12 ***
-## crime_histYes         -33.22940    6.25639  -5.311 1.10e-07 ***
-## charge_classA         120.48753   17.86451   6.745 1.57e-11 ***
-## charge_classB          12.31123   17.42228   0.707    0.480    
-## charge_classC          -8.39735   17.40716  -0.482    0.630    
-## charge_classGM        -20.81617   17.47668  -1.191    0.234    
-## total_dfa              33.87255    0.96174  35.220  &lt; 2e-16 ***
-## is_trial_set          117.24014    2.05610  57.021  &lt; 2e-16 ***
-## is_competency_hearing 102.64968    4.29260  23.913  &lt; 2e-16 ***
-## is_drug_court         282.66041    5.16556  54.720  &lt; 2e-16 ***
+## (Intercept)           126.38617    7.74532  16.318  &lt; 2e-16 ***
+## age                     0.29195    0.09642   3.028  0.00247 ** 
+## age_below_18           19.25459    5.99821   3.210  0.00133 ** 
+## age_below_60           20.12735    7.03187   2.862  0.00421 ** 
+## genderMale            -20.45688    2.66600  -7.673 1.75e-14 ***
+## crime_histYes         -38.29203    6.41586  -5.968 2.43e-09 ***
+## charge_classA         142.32386    4.83137  29.458  &lt; 2e-16 ***
+## charge_classB          29.35360    2.71275  10.821  &lt; 2e-16 ***
+## charge_classC           8.67503    2.66071   3.260  0.00111 ** 
+## total_dfa              34.10261    0.98012  34.794  &lt; 2e-16 ***
+## is_trial_set          116.64130    2.06819  56.398  &lt; 2e-16 ***
+## is_competency_hearing 102.42747    4.31876  23.717  &lt; 2e-16 ***
+## is_drug_court         289.48639    5.22157  55.440  &lt; 2e-16 ***
+## is_drug_charge          6.84369    2.73044   2.506  0.01220 *  
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 139.8 on 22492 degrees of freedom
-## Multiple R-squared:  0.314,  Adjusted R-squared:  0.3136 
-## F-statistic: 935.8 on 11 and 22492 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 140 on 22416 degrees of freedom
+## Multiple R-squared:  0.3157, Adjusted R-squared:  0.3153 
+## F-statistic: 795.4 on 13 and 22416 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_1 &lt;- tidy(model_1)
 y_pred_1 &lt;- predict.lm(model_1, test)
 y_true_1 &lt;- test$dispo_time_arraign
@@ -2852,15 +2873,15 @@ mae_1 &lt;- round(MLmetrics::MAE(y_pred_1, y_true_1), 4)
 mape_1 &lt;- round(MLmetrics::MAPE(y_pred_1, y_true_1), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_1)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.314&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.3157&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_1)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 89.4155&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 89.1736&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_1)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: Inf&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 1.3706&quot;</code></pre>
 <pre class="r"><code>eval_arraign[1,] &lt;- c(1, r_sq_1, mae_1, mape_1)</code></pre>
 </div>
 <div id="model-2-1" class="section level3">
-<h3><span class="header-section-number">2.2.2</span> Model 2</h3>
+<h3><span class="header-section-number">2.3.2</span> Model 2</h3>
 <pre class="r"><code>model_2 &lt;- lm(
   data = train,
   formula = dispo_time_arraign ~ 
@@ -2875,25 +2896,25 @@ summary(model_2)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -574.43  -78.38  -24.83   51.22 1576.72 
+## -540.19  -78.64  -24.97   50.79 1575.84 
 ## 
 ## Coefficients:
 ##                        Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           112.61519    7.29563  15.436  &lt; 2e-16 ***
-## age                     0.36556    0.08458   4.322 1.55e-05 ***
-## genderMale            -20.01632    2.66523  -7.510 6.12e-14 ***
-## crime_histYes         -32.29260    6.26806  -5.152 2.60e-07 ***
-## seriousness            11.24066    0.37905  29.654  &lt; 2e-16 ***
-## total_dfa              35.59516    0.96591  36.851  &lt; 2e-16 ***
-## is_trial_set          114.85069    2.07653  55.309  &lt; 2e-16 ***
-## is_competency_hearing  99.24735    4.30603  23.048  &lt; 2e-16 ***
-## is_drug_court         287.68553    5.15817  55.773  &lt; 2e-16 ***
+## (Intercept)           119.78386    7.45194  16.074  &lt; 2e-16 ***
+## age                     0.39024    0.08496   4.593 4.39e-06 ***
+## genderMale            -21.13634    2.67444  -7.903 2.85e-15 ***
+## crime_histYes         -38.42197    6.43052  -5.975 2.34e-09 ***
+## seriousness            11.20771    0.38000  29.494  &lt; 2e-16 ***
+## total_dfa              35.71787    0.97907  36.481  &lt; 2e-16 ***
+## is_trial_set          113.99360    2.08654  54.633  &lt; 2e-16 ***
+## is_competency_hearing  97.32293    4.33190  22.467  &lt; 2e-16 ***
+## is_drug_court         294.73033    5.21489  56.517  &lt; 2e-16 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 140 on 22495 degrees of freedom
-## Multiple R-squared:  0.3118, Adjusted R-squared:  0.3116 
-## F-statistic:  1274 on 8 and 22495 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 140.4 on 22421 degrees of freedom
+## Multiple R-squared:  0.3111, Adjusted R-squared:  0.3109 
+## F-statistic:  1266 on 8 and 22421 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_2 &lt;- tidy(model_2)
 y_pred_2 &lt;- predict.lm(model_2, test)
 y_true_2 &lt;- test$dispo_time_arraign
@@ -2903,50 +2924,53 @@ mae_2 &lt;- round(MLmetrics::MAE(y_pred_2, y_true_2), 4)
 mape_2 &lt;- round(MLmetrics::MAPE(y_pred_2, y_true_2), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_2)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.3118&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.3111&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_2)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 90.4312&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 89.8796&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_2)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: Inf&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 1.3867&quot;</code></pre>
 <pre class="r"><code>eval_arraign[2,] &lt;- c(2, r_sq_2, mae_2, mape_2)</code></pre>
 </div>
 <div id="model-3-1" class="section level3">
-<h3><span class="header-section-number">2.2.3</span> Model 3</h3>
+<h3><span class="header-section-number">2.3.3</span> Model 3</h3>
 <pre class="r"><code>model_3 &lt;- lm(
   data = train,
   formula = dispo_time_arraign ~ 
-    age + gender + crime_hist + serious_cat + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+    age + age_below_18 + age_below_60 + gender + crime_hist + serious_cat + total_dfa + is_trial_set + is_competency_hearing + is_drug_court + is_drug_charge
 )
 summary(model_3)</code></pre>
 <pre><code>## 
 ## Call:
-## lm(formula = dispo_time_arraign ~ age + gender + crime_hist + 
-##     serious_cat + total_dfa + is_trial_set + is_competency_hearing + 
-##     is_drug_court, data = train)
+## lm(formula = dispo_time_arraign ~ age + age_below_18 + age_below_60 + 
+##     gender + crime_hist + serious_cat + total_dfa + is_trial_set + 
+##     is_competency_hearing + is_drug_court + is_drug_charge, data = train)
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -568.85  -76.67  -24.66   50.30 1594.79 
+## -557.75  -76.65  -24.18   49.71 1596.84 
 ## 
 ## Coefficients:
 ##                        Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           135.56742    7.13849  18.991  &lt; 2e-16 ***
-## age                     0.27816    0.08396   3.313 0.000925 ***
-## genderMale            -19.23782    2.65298  -7.251 4.26e-13 ***
-## crime_histYes         -35.34861    6.22577  -5.678 1.38e-08 ***
-## serious_cat&gt;10        203.44529    6.67795  30.465  &lt; 2e-16 ***
-## serious_cat5-10        64.81838    3.98665  16.259  &lt; 2e-16 ***
-## serious_catOther       11.83911    3.86364   3.064 0.002185 ** 
-## total_dfa              34.52401    0.95657  36.091  &lt; 2e-16 ***
-## is_trial_set          116.40676    2.04939  56.801  &lt; 2e-16 ***
-## is_competency_hearing 104.51800    4.27305  24.460  &lt; 2e-16 ***
-## is_drug_court         288.78560    5.13228  56.268  &lt; 2e-16 ***
+## (Intercept)           140.93337    7.42056  18.992  &lt; 2e-16 ***
+## age                     0.23625    0.09604   2.460 0.013911 *  
+## age_below_18           21.48242    5.97221   3.597 0.000323 ***
+## age_below_60           19.21447    7.00898   2.741 0.006123 ** 
+## genderMale            -20.51315    2.65999  -7.712 1.29e-14 ***
+## crime_histYes         -39.93233    6.38853  -6.251 4.16e-10 ***
+## serious_cat&gt;10        205.56864    6.67574  30.793  &lt; 2e-16 ***
+## serious_cat5-10        62.34094    4.02025  15.507  &lt; 2e-16 ***
+## serious_catOther       13.69271    3.85954   3.548 0.000389 ***
+## total_dfa              34.43660    0.97646  35.267  &lt; 2e-16 ***
+## is_trial_set          116.14633    2.06187  56.331  &lt; 2e-16 ***
+## is_competency_hearing 103.64528    4.29998  24.104  &lt; 2e-16 ***
+## is_drug_court         295.51463    5.18934  56.947  &lt; 2e-16 ***
+## is_drug_charge          9.41352    2.65319   3.548 0.000389 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 139.3 on 22493 degrees of freedom
-## Multiple R-squared:  0.3192, Adjusted R-squared:  0.3189 
-## F-statistic:  1055 on 10 and 22493 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 139.5 on 22416 degrees of freedom
+## Multiple R-squared:  0.3204, Adjusted R-squared:   0.32 
+## F-statistic: 812.8 on 13 and 22416 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_3 &lt;- tidy(model_3)
 y_pred_3 &lt;- predict.lm(model_3, test)
 y_true_3 &lt;- test$dispo_time_arraign
@@ -2956,15 +2980,15 @@ mae_3 &lt;- round(MLmetrics::MAE(y_pred_3, y_true_3), 4)
 mape_3 &lt;- round(MLmetrics::MAPE(y_pred_3, y_true_3), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_3)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.3192&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.3204&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_3)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 89.5843&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 89.3151&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_3)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: Inf&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 1.3938&quot;</code></pre>
 <pre class="r"><code>eval_arraign[3,] &lt;- c(3, r_sq_3, mae_3, mape_3)</code></pre>
 </div>
 <div id="model-4-1" class="section level3">
-<h3><span class="header-section-number">2.2.4</span> Model 4</h3>
+<h3><span class="header-section-number">2.3.4</span> Model 4</h3>
 <pre class="r"><code>model_4 &lt;- lm(
   data = train,
   formula = dispo_time_arraign ~ 
@@ -2979,26 +3003,26 @@ summary(model_4)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -572.66  -77.06  -24.88   50.90 1582.30 
+## -546.85  -76.97  -24.68   50.50 1582.28 
 ## 
 ## Coefficients:
 ##                        Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           117.87907    7.29295  16.163  &lt; 2e-16 ***
-## age                     0.36611    0.08436   4.340 1.43e-05 ***
-## genderMale            -19.87429    2.65837  -7.476 7.94e-14 ***
-## crime_histYes         -32.01378    6.25192  -5.121 3.07e-07 ***
-## class_a                64.26258    5.92431  10.847  &lt; 2e-16 ***
-## seriousness             7.54738    0.50879  14.834  &lt; 2e-16 ***
-## total_dfa              35.49305    0.96346  36.839  &lt; 2e-16 ***
-## is_trial_set          114.54221    2.07136  55.298  &lt; 2e-16 ***
-## is_competency_hearing  99.99814    4.29546  23.280  &lt; 2e-16 ***
-## is_drug_court         288.10306    5.14499  55.997  &lt; 2e-16 ***
+## (Intercept)           126.48868    7.44583  16.988  &lt; 2e-16 ***
+## age                     0.38471    0.08467   4.544 5.56e-06 ***
+## genderMale            -21.16464    2.66528  -7.941 2.10e-15 ***
+## crime_histYes         -38.41771    6.40848  -5.995 2.07e-09 ***
+## class_a                74.13376    5.94471  12.471  &lt; 2e-16 ***
+## seriousness             6.94739    0.51003  13.622  &lt; 2e-16 ***
+## total_dfa              35.63781    0.97574  36.524  &lt; 2e-16 ***
+## is_trial_set          113.65188    2.07957  54.652  &lt; 2e-16 ***
+## is_competency_hearing  98.63453    4.31833  22.841  &lt; 2e-16 ***
+## is_drug_court         295.32543    5.19724  56.824  &lt; 2e-16 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 139.6 on 22494 degrees of freedom
-## Multiple R-squared:  0.3154, Adjusted R-squared:  0.3151 
-## F-statistic:  1151 on 9 and 22494 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 139.9 on 22420 degrees of freedom
+## Multiple R-squared:  0.3159, Adjusted R-squared:  0.3156 
+## F-statistic:  1150 on 9 and 22420 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_4 &lt;- tidy(model_4)
 y_pred_4 &lt;- predict.lm(model_4, test)
 y_true_4 &lt;- test$dispo_time_arraign
@@ -3008,15 +3032,15 @@ mae_4 &lt;- round(MLmetrics::MAE(y_pred_4, y_true_4), 4)
 mape_4 &lt;- round(MLmetrics::MAPE(y_pred_4, y_true_4), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_4)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.3154&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.3159&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_4)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 89.8483&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 89.6414&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_4)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: Inf&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 1.3822&quot;</code></pre>
 <pre class="r"><code>eval_arraign[4,] &lt;- c(4, r_sq_4, mae_4, mape_4)</code></pre>
 </div>
 <div id="model-5-1" class="section level3">
-<h3><span class="header-section-number">2.2.5</span> Model 5</h3>
+<h3><span class="header-section-number">2.3.5</span> Model 5</h3>
 <pre class="r"><code>model_5 &lt;- lm(
   data = train,
   formula = dispo_time_arraign ~ 
@@ -3031,26 +3055,26 @@ summary(model_5)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -574.16  -77.97  -24.65   51.14 1577.15 
+## -546.40  -78.35  -24.76   50.93 1576.44 
 ## 
 ## Coefficients:
 ##                        Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           116.09784    7.47046  15.541  &lt; 2e-16 ***
-## age                     0.37248    0.08463   4.401 1.08e-05 ***
-## genderMale            -20.11523    2.66540  -7.547 4.63e-14 ***
-## crime_histYes         -32.40307    6.26775  -5.170 2.36e-07 ***
-## is_felony              -5.80291    2.68169  -2.164   0.0305 *  
-## seriousness            11.67402    0.42868  27.233  &lt; 2e-16 ***
-## total_dfa              35.87738    0.97460  36.812  &lt; 2e-16 ***
-## is_trial_set          114.58606    2.07996  55.091  &lt; 2e-16 ***
-## is_competency_hearing  99.24439    4.30568  23.050  &lt; 2e-16 ***
-## is_drug_court         288.43849    5.16947  55.797  &lt; 2e-16 ***
+## (Intercept)           124.74808    7.63602  16.337  &lt; 2e-16 ***
+## age                     0.39822    0.08499   4.686 2.81e-06 ***
+## genderMale            -21.26671    2.67434  -7.952 1.92e-15 ***
+## crime_histYes         -38.66410    6.42992  -6.013 1.85e-09 ***
+## is_felony              -8.00597    2.69705  -2.968    0.003 ** 
+## seriousness            11.79989    0.42913  27.497  &lt; 2e-16 ***
+## total_dfa              36.10298    0.98746  36.561  &lt; 2e-16 ***
+## is_trial_set          113.62681    2.08983  54.371  &lt; 2e-16 ***
+## is_competency_hearing  97.34211    4.33115  22.475  &lt; 2e-16 ***
+## is_drug_court         295.78830    5.22615  56.598  &lt; 2e-16 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 140 on 22494 degrees of freedom
-## Multiple R-squared:  0.312,  Adjusted R-squared:  0.3117 
-## F-statistic:  1133 on 9 and 22494 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 140.4 on 22420 degrees of freedom
+## Multiple R-squared:  0.3114, Adjusted R-squared:  0.3111 
+## F-statistic:  1127 on 9 and 22420 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_5 &lt;- tidy(model_5)
 y_pred_5 &lt;- predict.lm(model_5, test)
 y_true_5 &lt;- test$dispo_time_arraign
@@ -3060,15 +3084,15 @@ mae_5 &lt;- round(MLmetrics::MAE(y_pred_5, y_true_5), 4)
 mape_5 &lt;- round(MLmetrics::MAPE(y_pred_5, y_true_5), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_5)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.312&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.3114&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_5)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 90.4034&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 89.9387&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_5)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: Inf&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 1.3866&quot;</code></pre>
 <pre class="r"><code>eval_arraign[5,] &lt;- c(5, r_sq_5, mae_5, mape_5)</code></pre>
 </div>
 <div id="model-6-1" class="section level3">
-<h3><span class="header-section-number">2.2.6</span> Model 6</h3>
+<h3><span class="header-section-number">2.3.6</span> Model 6</h3>
 <pre class="r"><code>model_6 &lt;- lm(
   data = train,
   formula = dispo_time_arraign ~ 
@@ -3083,32 +3107,31 @@ summary(model_6)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -584.25  -77.07  -25.18   49.33 1602.15 
+## -542.22  -76.57  -24.95   49.62 1600.99 
 ## 
 ## Coefficients:
 ##                       Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           159.4691    19.3078   8.259  &lt; 2e-16 ***
-## age_group20-30        -14.7554     5.7675  -2.558  0.01052 *  
-## age_group30-40        -17.1120     5.8802  -2.910  0.00362 ** 
-## age_group40-50         -5.1144     6.1054  -0.838  0.40222    
-## age_group50-60         -1.4692     6.5442  -0.225  0.82237    
-## age_groupGE_60         11.6372     8.8029   1.322  0.18619    
-## genderMale            -18.9571     2.6591  -7.129 1.04e-12 ***
-## crime_histYes         -31.9846     6.2591  -5.110 3.25e-07 ***
-## charge_classA         119.1567    17.8611   6.671 2.59e-11 ***
-## charge_classB          12.6493    17.4129   0.726  0.46758    
-## charge_classC          -7.7139    17.3980  -0.443  0.65749    
-## charge_classGM        -20.5894    17.4671  -1.179  0.23851    
-## total_dfa              34.0733     0.9619  35.424  &lt; 2e-16 ***
-## is_trial_set          117.3979     2.0547  57.136  &lt; 2e-16 ***
-## is_competency_hearing 102.8676     4.2899  23.979  &lt; 2e-16 ***
-## is_drug_court         282.6403     5.1633  54.740  &lt; 2e-16 ***
+## (Intercept)           149.4040     8.9303  16.730  &lt; 2e-16 ***
+## age_group20-30        -16.3274     5.9002  -2.767  0.00566 ** 
+## age_group30-40        -17.8911     6.0100  -2.977  0.00291 ** 
+## age_group40-50         -6.1741     6.2333  -0.991  0.32194    
+## age_group50-60         -4.5311     6.6655  -0.680  0.49665    
+## age_groupGE_60         17.0311     8.9220   1.909  0.05629 .  
+## genderMale            -20.3005     2.6649  -7.618 2.68e-14 ***
+## crime_histYes         -37.6415     6.4157  -5.867 4.50e-09 ***
+## charge_classA         142.8137     4.8272  29.585  &lt; 2e-16 ***
+## charge_classB          30.5682     2.6809  11.402  &lt; 2e-16 ***
+## charge_classC          10.5075     2.5859   4.063 4.85e-05 ***
+## total_dfa              34.4635     0.9745  35.367  &lt; 2e-16 ***
+## is_trial_set          116.2727     2.0632  56.356  &lt; 2e-16 ***
+## is_competency_hearing 101.7957     4.3094  23.622  &lt; 2e-16 ***
+## is_drug_court         289.8830     5.2162  55.574  &lt; 2e-16 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 139.7 on 22488 degrees of freedom
-## Multiple R-squared:  0.3149, Adjusted R-squared:  0.3145 
-## F-statistic: 689.2 on 15 and 22488 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 139.9 on 22415 degrees of freedom
+## Multiple R-squared:  0.3159, Adjusted R-squared:  0.3155 
+## F-statistic: 739.4 on 14 and 22415 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_6 &lt;- tidy(model_6)
 y_pred_6 &lt;- predict.lm(model_6, test)
 y_true_6 &lt;- test$dispo_time_arraign
@@ -3118,15 +3141,15 @@ mae_6 &lt;- round(MLmetrics::MAE(y_pred_6, y_true_6), 4)
 mape_6 &lt;- round(MLmetrics::MAPE(y_pred_6, y_true_6), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_6)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.3149&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.3159&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_6)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 89.314&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 89.206&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_6)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: Inf&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 1.369&quot;</code></pre>
 <pre class="r"><code>eval_arraign[6,] &lt;- c(6, r_sq_6, mae_6, mape_6)</code></pre>
 </div>
 <div id="model-7-1" class="section level3">
-<h3><span class="header-section-number">2.2.7</span> Model 7</h3>
+<h3><span class="header-section-number">2.3.7</span> Model 7</h3>
 <pre class="r"><code>model_7 &lt;- lm(
   data = train,
   formula = dispo_time_arraign ~ 
@@ -3141,29 +3164,29 @@ summary(model_7)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -576.83  -78.21  -24.76   50.72 1581.77 
+## -542.90  -78.35  -25.07   50.58 1580.40 
 ## 
 ## Coefficients:
 ##                       Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           137.5539     8.6322  15.935  &lt; 2e-16 ***
-## age_group20-30        -16.9271     5.7648  -2.936  0.00332 ** 
-## age_group30-40        -19.2647     5.8746  -3.279  0.00104 ** 
-## age_group40-50         -6.2631     6.1052  -1.026  0.30496    
-## age_group50-60         -2.3589     6.5465  -0.360  0.71861    
-## age_groupGE_60         11.3256     8.8126   1.285  0.19875    
-## genderMale            -20.0412     2.6642  -7.522 5.58e-14 ***
-## crime_histYes         -30.9703     6.2699  -4.940 7.89e-07 ***
-## seriousness            11.1067     0.3801  29.217  &lt; 2e-16 ***
-## total_dfa              35.8176     0.9659  37.080  &lt; 2e-16 ***
-## is_trial_set          115.0339     2.0748  55.444  &lt; 2e-16 ***
-## is_competency_hearing  99.5588     4.3029  23.138  &lt; 2e-16 ***
-## is_drug_court         287.6704     5.1553  55.801  &lt; 2e-16 ***
+## (Intercept)           147.1397     8.8239  16.675  &lt; 2e-16 ***
+## age_group20-30        -19.3261     5.9058  -3.272 0.001068 ** 
+## age_group30-40        -20.9225     6.0124  -3.480 0.000503 ***
+## age_group40-50         -8.2202     6.2418  -1.317 0.187870    
+## age_group50-60         -6.2706     6.6772  -0.939 0.347682    
+## age_groupGE_60         15.7209     8.9429   1.758 0.078776 .  
+## genderMale            -21.0819     2.6731  -7.887 3.25e-15 ***
+## crime_histYes         -36.6641     6.4332  -5.699 1.22e-08 ***
+## seriousness            11.0545     0.3810  29.016  &lt; 2e-16 ***
+## total_dfa              35.9823     0.9793  36.743  &lt; 2e-16 ***
+## is_trial_set          114.2605     2.0853  54.793  &lt; 2e-16 ***
+## is_competency_hearing  97.7033     4.3287  22.571  &lt; 2e-16 ***
+## is_drug_court         294.6031     5.2117  56.527  &lt; 2e-16 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 139.9 on 22491 degrees of freedom
-## Multiple R-squared:  0.3129, Adjusted R-squared:  0.3126 
-## F-statistic: 853.6 on 12 and 22491 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 140.3 on 22417 degrees of freedom
+## Multiple R-squared:  0.3124, Adjusted R-squared:  0.312 
+## F-statistic: 848.6 on 12 and 22417 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_7 &lt;- tidy(model_7)
 y_pred_7 &lt;- predict.lm(model_7, test)
 y_true_7 &lt;- test$dispo_time_arraign
@@ -3173,15 +3196,15 @@ mae_7 &lt;- round(MLmetrics::MAE(y_pred_7, y_true_7), 4)
 mape_7 &lt;- round(MLmetrics::MAPE(y_pred_7, y_true_7), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_7)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.3129&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.3124&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_7)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 90.3564&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 89.8354&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_7)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: Inf&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 1.3817&quot;</code></pre>
 <pre class="r"><code>eval_arraign[7,] &lt;- c(7, r_sq_7, mae_7, mape_7)</code></pre>
 </div>
 <div id="model-8-1" class="section level3">
-<h3><span class="header-section-number">2.2.8</span> Model 8</h3>
+<h3><span class="header-section-number">2.3.8</span> Model 8</h3>
 <pre class="r"><code>model_8 &lt;- lm(
   data = train,
   formula = dispo_time_arraign ~ 
@@ -3196,31 +3219,31 @@ summary(model_8)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -571.18  -76.75  -24.52   50.25 1599.51 
+## -562.06  -76.64  -24.49   50.00 1597.78 
 ## 
 ## Coefficients:
 ##                       Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           157.0723     8.4728  18.538  &lt; 2e-16 ***
-## age_group20-30        -15.6937     5.7407  -2.734  0.00627 ** 
-## age_group30-40        -18.7012     5.8485  -3.198  0.00139 ** 
-## age_group40-50         -7.2904     6.0726  -1.201  0.22994    
-## age_group50-60         -3.1965     6.5139  -0.491  0.62363    
-## age_groupGE_60          7.8379     8.7614   0.895  0.37101    
-## genderMale            -19.2815     2.6522  -7.270 3.71e-13 ***
-## crime_histYes         -34.0708     6.2287  -5.470 4.55e-08 ***
-## serious_cat&gt;10        201.8497     6.6861  30.190  &lt; 2e-16 ***
-## serious_cat5-10        63.5192     3.9987  15.885  &lt; 2e-16 ***
-## serious_catOther       11.1523     3.8635   2.887  0.00390 ** 
-## total_dfa              34.7356     0.9567  36.306  &lt; 2e-16 ***
-## is_trial_set          116.5570     2.0480  56.913  &lt; 2e-16 ***
-## is_competency_hearing 104.7073     4.2703  24.520  &lt; 2e-16 ***
-## is_drug_court         288.7268     5.1298  56.284  &lt; 2e-16 ***
+## (Intercept)           166.5728     8.6647  19.224  &lt; 2e-16 ***
+## age_group20-30        -18.7050     5.8752  -3.184 0.001456 ** 
+## age_group30-40        -20.6334     5.9811  -3.450 0.000562 ***
+## age_group40-50        -10.1438     6.2029  -1.635 0.101994    
+## age_group50-60         -7.6335     6.6378  -1.150 0.250156    
+## age_groupGE_60         11.2231     8.8880   1.263 0.206700    
+## genderMale            -20.3381     2.6597  -7.647 2.14e-14 ***
+## crime_histYes         -39.2990     6.3898  -6.150 7.87e-10 ***
+## serious_cat&gt;10        204.4820     6.6702  30.656  &lt; 2e-16 ***
+## serious_cat5-10        61.7122     4.0163  15.366  &lt; 2e-16 ***
+## serious_catOther       12.1440     3.8451   3.158 0.001589 ** 
+## total_dfa              34.9577     0.9696  36.055  &lt; 2e-16 ***
+## is_trial_set          115.6834     2.0577  56.221  &lt; 2e-16 ***
+## is_competency_hearing 102.8551     4.2934  23.957  &lt; 2e-16 ***
+## is_drug_court         296.2291     5.1839  57.144  &lt; 2e-16 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 139.2 on 22489 degrees of freedom
-## Multiple R-squared:  0.3201, Adjusted R-squared:  0.3197 
-## F-statistic: 756.4 on 14 and 22489 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 139.5 on 22415 degrees of freedom
+## Multiple R-squared:  0.3204, Adjusted R-squared:   0.32 
+## F-statistic: 754.8 on 14 and 22415 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_8 &lt;- tidy(model_8)
 y_pred_8 &lt;- predict.lm(model_8, test)
 y_true_8 &lt;- test$dispo_time_arraign
@@ -3230,15 +3253,15 @@ mae_8 &lt;- round(MLmetrics::MAE(y_pred_8, y_true_8), 4)
 mape_8 &lt;- round(MLmetrics::MAPE(y_pred_8, y_true_8), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_8)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.3201&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.3204&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_8)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 89.4756&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 89.3782&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_8)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: Inf&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 1.3923&quot;</code></pre>
 <pre class="r"><code>eval_arraign[8,] &lt;- c(8, r_sq_8, mae_8, mape_8)</code></pre>
 </div>
 <div id="model-9-1" class="section level3">
-<h3><span class="header-section-number">2.2.9</span> Model 9</h3>
+<h3><span class="header-section-number">2.3.9</span> Model 9</h3>
 <pre class="r"><code>model_9 &lt;- lm(
   data = train,
   formula = dispo_time_arraign ~ 
@@ -3253,30 +3276,30 @@ summary(model_9)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -574.91  -76.87  -24.69   50.68 1586.93 
+## -549.40  -76.79  -24.34   50.02 1586.36 
 ## 
 ## Coefficients:
 ##                       Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           139.3146     8.6126  16.176  &lt; 2e-16 ***
-## age_group20-30        -13.2920     5.7609  -2.307  0.02105 *  
-## age_group30-40        -15.4927     5.8710  -2.639  0.00832 ** 
-## age_group40-50         -2.8853     6.0985  -0.473  0.63613    
-## age_group50-60          0.8937     6.5377   0.137  0.89127    
-## age_groupGE_60         13.9478     8.7945   1.586  0.11276    
-## genderMale            -19.8994     2.6577  -7.488 7.28e-14 ***
-## crime_histYes         -30.8198     6.2545  -4.928 8.38e-07 ***
-## class_a                62.7460     5.9327  10.576  &lt; 2e-16 ***
-## seriousness             7.5230     0.5085  14.793  &lt; 2e-16 ***
-## total_dfa              35.6990     0.9636  37.046  &lt; 2e-16 ***
-## is_trial_set          114.7066     2.0699  55.416  &lt; 2e-16 ***
-## is_competency_hearing 100.2450     4.2928  23.352  &lt; 2e-16 ***
-## is_drug_court         288.0533     5.1427  56.012  &lt; 2e-16 ***
+## (Intercept)           150.0647     8.7982  17.056  &lt; 2e-16 ***
+## age_group20-30        -15.5727     5.8945  -2.642  0.00825 ** 
+## age_group30-40        -16.9656     6.0014  -2.827  0.00470 ** 
+## age_group40-50         -4.7911     6.2277  -0.769  0.44171    
+## age_group50-60         -2.9952     6.6607  -0.450  0.65294    
+## age_groupGE_60         17.9501     8.9155   2.013  0.04409 *  
+## genderMale            -21.1082     2.6644  -7.922 2.44e-15 ***
+## crime_histYes         -36.8289     6.4121  -5.744 9.39e-09 ***
+## class_a                72.5702     5.9508  12.195  &lt; 2e-16 ***
+## seriousness             6.9067     0.5098  13.548  &lt; 2e-16 ***
+## total_dfa              35.8797     0.9761  36.757  &lt; 2e-16 ***
+## is_trial_set          113.8936     2.0787  54.791  &lt; 2e-16 ***
+## is_competency_hearing  98.9285     4.3157  22.923  &lt; 2e-16 ***
+## is_drug_court         295.1908     5.1949  56.824  &lt; 2e-16 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 139.6 on 22490 degrees of freedom
-## Multiple R-squared:  0.3163, Adjusted R-squared:  0.3159 
-## F-statistic: 800.5 on 13 and 22490 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 139.8 on 22416 degrees of freedom
+## Multiple R-squared:  0.3169, Adjusted R-squared:  0.3165 
+## F-statistic: 799.9 on 13 and 22416 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_9 &lt;- tidy(model_9)
 y_pred_9 &lt;- predict.lm(model_9, test)
 y_true_9 &lt;- test$dispo_time_arraign
@@ -3286,15 +3309,15 @@ mae_9 &lt;- round(MLmetrics::MAE(y_pred_9, y_true_9), 4)
 mape_9 &lt;- round(MLmetrics::MAPE(y_pred_9, y_true_9), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_9)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.3163&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.3169&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_9)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 89.7711&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 89.5983&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_9)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: Inf&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 1.3777&quot;</code></pre>
 <pre class="r"><code>eval_arraign[9,] &lt;- c(9, r_sq_9, mae_9, mape_9)</code></pre>
 </div>
 <div id="model-10-1" class="section level3">
-<h3><span class="header-section-number">2.2.10</span> Model 10</h3>
+<h3><span class="header-section-number">2.3.10</span> Model 10</h3>
 <pre class="r"><code>model_10 &lt;- lm(
   data = train,
   formula = dispo_time_arraign ~ 
@@ -3309,30 +3332,30 @@ summary(model_10)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -576.57  -77.98  -24.62   50.81 1582.06 
+## -548.43  -78.21  -24.81   50.82 1580.79 
 ## 
 ## Coefficients:
 ##                       Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           140.2489     8.7497  16.029  &lt; 2e-16 ***
-## age_group20-30        -16.4134     5.7709  -2.844  0.00446 ** 
-## age_group30-40        -18.6216     5.8842  -3.165  0.00155 ** 
-## age_group40-50         -5.6250     6.1142  -0.920  0.35759    
-## age_group50-60         -1.7454     6.5542  -0.266  0.79001    
-## age_groupGE_60         11.7690     8.8153   1.335  0.18187    
-## genderMale            -20.1279     2.6644  -7.554 4.37e-14 ***
-## crime_histYes         -31.0917     6.2699  -4.959 7.14e-07 ***
-## is_felony              -5.0508     2.6835  -1.882  0.05983 .  
-## seriousness            11.4868     0.4304  26.687  &lt; 2e-16 ***
-## total_dfa              36.0596     0.9744  37.007  &lt; 2e-16 ***
-## is_trial_set          114.8007     2.0784  55.236  &lt; 2e-16 ***
-## is_competency_hearing  99.5514     4.3027  23.137  &lt; 2e-16 ***
-## is_drug_court         288.3221     5.1666  55.805  &lt; 2e-16 ***
+## (Intercept)           151.1166     8.9504  16.884  &lt; 2e-16 ***
+## age_group20-30        -18.6776     5.9102  -3.160 0.001578 ** 
+## age_group30-40        -20.0510     6.0206  -3.330 0.000869 ***
+## age_group40-50         -7.4279     6.2482  -1.189 0.234533    
+## age_group50-60         -5.4989     6.6827  -0.823 0.410598    
+## age_groupGE_60         16.1878     8.9435   1.810 0.070307 .  
+## genderMale            -21.1991     2.6731  -7.930 2.29e-15 ***
+## crime_histYes         -36.9240     6.4331  -5.740 9.61e-09 ***
+## is_felony              -7.1252     2.6991  -2.640 0.008299 ** 
+## seriousness            11.5853     0.4307  26.896  &lt; 2e-16 ***
+## total_dfa              36.3182     0.9874  36.781  &lt; 2e-16 ***
+## is_trial_set          113.9288     2.0888  54.542  &lt; 2e-16 ***
+## is_competency_hearing  97.7120     4.3281  22.576  &lt; 2e-16 ***
+## is_drug_court         295.5473     5.2233  56.583  &lt; 2e-16 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 139.9 on 22490 degrees of freedom
-## Multiple R-squared:  0.313,  Adjusted R-squared:  0.3126 
-## F-statistic: 788.3 on 13 and 22490 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 140.3 on 22416 degrees of freedom
+## Multiple R-squared:  0.3126, Adjusted R-squared:  0.3122 
+## F-statistic:   784 on 13 and 22416 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_10 &lt;- tidy(model_10)
 y_pred_10 &lt;- predict.lm(model_10, test)
 y_true_10 &lt;- test$dispo_time_arraign
@@ -3342,15 +3365,15 @@ mae_10 &lt;- round(MLmetrics::MAE(y_pred_10, y_true_10), 4)
 mape_10 &lt;- round(MLmetrics::MAPE(y_pred_10, y_true_10), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_10)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.313&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.3126&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_10)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 90.3342&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 89.8879&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_10)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: Inf&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 1.3818&quot;</code></pre>
 <pre class="r"><code>eval_arraign[10,] &lt;- c(10, r_sq_10, mae_10, mape_10)</code></pre>
 </div>
 <div id="model-11-1" class="section level3">
-<h3><span class="header-section-number">2.2.11</span> Model 11</h3>
+<h3><span class="header-section-number">2.3.11</span> Model 11</h3>
 <pre class="r"><code>model_11 &lt;- lm(
   data = train,
   formula = dispo_time_arraign ~ 
@@ -3365,28 +3388,27 @@ summary(model_11)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -434.55  -84.60  -30.67   46.41 1576.28 
+## -439.27  -84.26  -30.47   45.98 1576.00 
 ## 
 ## Coefficients:
-##                       Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           153.0519    19.9845   7.659 1.96e-14 ***
-## age                     0.2714     0.0901   3.012   0.0026 ** 
-## genderMale            -22.9497     2.8306  -8.108 5.42e-16 ***
-## crime_histYes         -45.3775     6.6542  -6.819 9.37e-12 ***
-## charge_classA         124.6948    19.0100   6.559 5.52e-11 ***
-## charge_classB          23.3525    18.5425   1.259   0.2079    
-## charge_classC          -4.5145    18.5349  -0.244   0.8076    
-## charge_classGM        -18.6308    18.5968  -1.002   0.3164    
-## total_dfa              44.2742     1.0090  43.879  &lt; 2e-16 ***
-## is_trial_set          111.9268     2.1899  51.111  &lt; 2e-16 ***
-## is_competency_hearing  95.6877     4.5738  20.921  &lt; 2e-16 ***
-## is_drug_charge         11.7351     2.9008   4.045 5.24e-05 ***
+##                        Estimate Std. Error t value Pr(&gt;|t|)    
+## (Intercept)           143.05265    8.12385  17.609  &lt; 2e-16 ***
+## age                     0.27585    0.09055   3.046  0.00232 ** 
+## genderMale            -24.10088    2.84252  -8.479  &lt; 2e-16 ***
+## crime_histYes         -51.06936    6.83323  -7.474 8.08e-14 ***
+## charge_classA         146.78308    5.13325  28.595  &lt; 2e-16 ***
+## charge_classB          39.88461    2.88655  13.817  &lt; 2e-16 ***
+## charge_classC          11.35525    2.83706   4.002 6.29e-05 ***
+## total_dfa              44.83144    1.02387  43.786  &lt; 2e-16 ***
+## is_trial_set          110.71172    2.20176  50.283  &lt; 2e-16 ***
+## is_competency_hearing  95.73024    4.60461  20.790  &lt; 2e-16 ***
+## is_drug_charge         13.42841    2.90735   4.619 3.88e-06 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 148.8 on 22492 degrees of freedom
-## Multiple R-squared:  0.2232, Adjusted R-squared:  0.2228 
-## F-statistic: 587.5 on 11 and 22492 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 149.3 on 22419 degrees of freedom
+## Multiple R-squared:  0.2213, Adjusted R-squared:  0.2209 
+## F-statistic:   637 on 10 and 22419 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_11 &lt;- tidy(model_11)
 y_pred_11 &lt;- predict.lm(model_11, test)
 y_true_11 &lt;- test$dispo_time_arraign
@@ -3396,15 +3418,15 @@ mae_11 &lt;- round(MLmetrics::MAE(y_pred_11, y_true_11), 4)
 mape_11 &lt;- round(MLmetrics::MAPE(y_pred_11, y_true_11), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_11)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.2232&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.2213&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_11)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 93.1252&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 92.7709&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_11)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: Inf&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 1.4028&quot;</code></pre>
 <pre class="r"><code>eval_arraign[11,] &lt;- c(11, r_sq_11, mae_11, mape_11)</code></pre>
 </div>
 <div id="model-12-1" class="section level3">
-<h3><span class="header-section-number">2.2.12</span> Model 12</h3>
+<h3><span class="header-section-number">2.3.12</span> Model 12</h3>
 <pre class="r"><code>model_12 &lt;- lm(
   data = train,
   formula = dispo_time_arraign ~ 
@@ -3419,25 +3441,25 @@ summary(model_12)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -451.02  -85.44  -30.75   47.35 1555.99 
+## -453.21  -85.52  -30.77   46.75 1554.73 
 ## 
 ## Coefficients:
 ##                        Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           132.57374    7.76210  17.080  &lt; 2e-16 ***
-## age                     0.25959    0.09022   2.877  0.00401 ** 
-## genderMale            -24.60132    2.83848  -8.667  &lt; 2e-16 ***
-## crime_histYes         -45.33202    6.66790  -6.799 1.08e-11 ***
-## seriousness            11.88664    0.41370  28.733  &lt; 2e-16 ***
-## total_dfa              45.57137    1.01293  44.989  &lt; 2e-16 ***
-## is_trial_set          110.04926    2.20902  49.818  &lt; 2e-16 ***
-## is_competency_hearing  93.46762    4.58550  20.383  &lt; 2e-16 ***
-## is_drug_charge         28.73897    2.88619   9.957  &lt; 2e-16 ***
+## (Intercept)           139.53413    7.94235  17.568  &lt; 2e-16 ***
+## age                     0.26281    0.09079   2.895   0.0038 ** 
+## genderMale            -25.43830    2.85314  -8.916  &lt; 2e-16 ***
+## crime_histYes         -51.15710    6.85294  -7.465 8.63e-14 ***
+## seriousness            11.91952    0.41525  28.705  &lt; 2e-16 ***
+## total_dfa              45.94798    1.02838  44.680  &lt; 2e-16 ***
+## is_trial_set          109.08352    2.22325  49.065  &lt; 2e-16 ***
+## is_competency_hearing  92.57848    4.62154  20.032  &lt; 2e-16 ***
+## is_drug_charge         29.66757    2.89651  10.243  &lt; 2e-16 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 149 on 22495 degrees of freedom
-## Multiple R-squared:  0.2201, Adjusted R-squared:  0.2198 
-## F-statistic: 793.5 on 8 and 22495 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 149.7 on 22421 degrees of freedom
+## Multiple R-squared:  0.2167, Adjusted R-squared:  0.2164 
+## F-statistic: 775.2 on 8 and 22421 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_12 &lt;- tidy(model_12)
 y_pred_12 &lt;- predict.lm(model_12, test)
 y_true_12 &lt;- test$dispo_time_arraign
@@ -3447,15 +3469,15 @@ mae_12 &lt;- round(MLmetrics::MAE(y_pred_12, y_true_12), 4)
 mape_12 &lt;- round(MLmetrics::MAPE(y_pred_12, y_true_12), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_12)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.2201&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.2167&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_12)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 94.0453&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 93.5156&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_12)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: Inf&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 1.4208&quot;</code></pre>
 <pre class="r"><code>eval_arraign[12,] &lt;- c(12, r_sq_12, mae_12, mape_12)</code></pre>
 </div>
 <div id="model-13-1" class="section level3">
-<h3><span class="header-section-number">2.2.13</span> Model 13</h3>
+<h3><span class="header-section-number">2.3.13</span> Model 13</h3>
 <pre class="r"><code>model_13 &lt;- lm(
   data = train,
   formula = dispo_time_arraign ~ 
@@ -3470,27 +3492,27 @@ summary(model_13)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -446.24  -83.38  -30.17   46.31 1571.44 
+## -450.60  -83.31  -30.10   45.74 1570.20 
 ## 
 ## Coefficients:
 ##                        Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           158.84071    7.60650  20.882  &lt; 2e-16 ***
-## age                     0.18875    0.08991   2.099  0.03581 *  
-## genderMale            -23.15335    2.83179  -8.176 3.08e-16 ***
-## crime_histYes         -49.16353    6.64066  -7.403 1.37e-13 ***
-## serious_cat&gt;10        202.05175    7.13392  28.323  &lt; 2e-16 ***
-## serious_cat5-10        60.46189    4.25789  14.200  &lt; 2e-16 ***
-## serious_catOther       10.66686    4.13919   2.577  0.00997 ** 
-## total_dfa              44.90144    1.00870  44.514  &lt; 2e-16 ***
-## is_trial_set          111.86317    2.18953  51.090  &lt; 2e-16 ***
-## is_competency_hearing  98.06098    4.56560  21.478  &lt; 2e-16 ***
-## is_drug_charge         15.24762    2.82176   5.404 6.60e-08 ***
+## (Intercept)           165.72728    7.79290  21.266  &lt; 2e-16 ***
+## age                     0.18243    0.09048   2.016  0.04377 *  
+## genderMale            -24.00487    2.84581  -8.435  &lt; 2e-16 ***
+## crime_histYes         -54.55109    6.82581  -7.992 1.39e-15 ***
+## serious_cat&gt;10        205.09430    7.13296  28.753  &lt; 2e-16 ***
+## serious_cat5-10        58.35688    4.28798  13.609  &lt; 2e-16 ***
+## serious_catOther       10.74815    4.12915   2.603  0.00925 ** 
+## total_dfa              45.30447    1.02390  44.247  &lt; 2e-16 ***
+## is_trial_set          110.97259    2.20317  50.370  &lt; 2e-16 ***
+## is_competency_hearing  97.25219    4.60040  21.140  &lt; 2e-16 ***
+## is_drug_charge         16.50542    2.83385   5.824 5.81e-09 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 148.6 on 22493 degrees of freedom
-## Multiple R-squared:  0.2244, Adjusted R-squared:  0.224 
-## F-statistic: 650.6 on 10 and 22493 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 149.3 on 22419 degrees of freedom
+## Multiple R-squared:  0.2214, Adjusted R-squared:  0.221 
+## F-statistic: 637.4 on 10 and 22419 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_13 &lt;- tidy(model_13)
 y_pred_13 &lt;- predict.lm(model_13, test)
 y_true_13 &lt;- test$dispo_time_arraign
@@ -3500,15 +3522,15 @@ mae_13 &lt;- round(MLmetrics::MAE(y_pred_13, y_true_13), 4)
 mape_13 &lt;- round(MLmetrics::MAPE(y_pred_13, y_true_13), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_13)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.2244&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.2214&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_13)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 93.3932&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 93.2021&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_13)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: Inf&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 1.4349&quot;</code></pre>
 <pre class="r"><code>eval_arraign[13,] &lt;- c(13, r_sq_13, mae_13, mape_13)</code></pre>
 </div>
 <div id="model-14-1" class="section level3">
-<h3><span class="header-section-number">2.2.14</span> Model 14</h3>
+<h3><span class="header-section-number">2.3.14</span> Model 14</h3>
 <pre class="r"><code>model_14 &lt;- lm(
   data = train,
   formula = dispo_time_arraign ~ 
@@ -3523,26 +3545,26 @@ summary(model_14)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -446.81  -84.61  -30.71   46.93 1560.11 
+## -451.25  -84.50  -30.65   46.38 1559.55 
 ## 
 ## Coefficients:
 ##                        Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           137.48685    7.77031  17.694  &lt; 2e-16 ***
-## age                     0.26621    0.09008   2.955  0.00313 ** 
-## genderMale            -24.37170    2.83397  -8.600  &lt; 2e-16 ***
-## crime_histYes         -45.15614    6.65706  -6.783  1.2e-11 ***
-## class_a                54.91418    6.36017   8.634  &lt; 2e-16 ***
-## seriousness             8.63350    0.55906  15.443  &lt; 2e-16 ***
-## total_dfa              45.62357    1.01130  45.114  &lt; 2e-16 ***
-## is_trial_set          109.71393    2.20576  49.740  &lt; 2e-16 ***
-## is_competency_hearing  93.90191    4.57830  20.510  &lt; 2e-16 ***
-## is_drug_charge         25.67952    2.90319   8.845  &lt; 2e-16 ***
+## (Intercept)           145.81097    7.94941  18.342  &lt; 2e-16 ***
+## age                     0.26514    0.09059   2.927  0.00343 ** 
+## genderMale            -25.34393    2.84684  -8.902  &lt; 2e-16 ***
+## crime_histYes         -51.22698    6.83776  -7.492 7.05e-14 ***
+## class_a                64.13914    6.39288  10.033  &lt; 2e-16 ***
+## seriousness             8.12338    0.56110  14.478  &lt; 2e-16 ***
+## total_dfa              46.04283    1.02615  44.870  &lt; 2e-16 ***
+## is_trial_set          108.71634    2.21863  49.002  &lt; 2e-16 ***
+## is_competency_hearing  93.47326    4.61216  20.267  &lt; 2e-16 ***
+## is_drug_charge         26.16358    2.91112   8.987  &lt; 2e-16 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 148.8 on 22494 degrees of freedom
-## Multiple R-squared:  0.2227, Adjusted R-squared:  0.2224 
-## F-statistic: 715.9 on 9 and 22494 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 149.4 on 22420 degrees of freedom
+## Multiple R-squared:  0.2202, Adjusted R-squared:  0.2199 
+## F-statistic: 703.3 on 9 and 22420 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_14 &lt;- tidy(model_14)
 y_pred_14 &lt;- predict.lm(model_14, test)
 y_true_14 &lt;- test$dispo_time_arraign
@@ -3552,15 +3574,15 @@ mae_14 &lt;- round(MLmetrics::MAE(y_pred_14, y_true_14), 4)
 mape_14 &lt;- round(MLmetrics::MAPE(y_pred_14, y_true_14), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_14)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.2227&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.2202&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_14)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 93.5585&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 93.2949&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_14)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: Inf&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 1.4171&quot;</code></pre>
 <pre class="r"><code>eval_arraign[14,] &lt;- c(14, r_sq_14, mae_14, mape_14)</code></pre>
 </div>
 <div id="model-15-1" class="section level3">
-<h3><span class="header-section-number">2.2.15</span> Model 15</h3>
+<h3><span class="header-section-number">2.3.15</span> Model 15</h3>
 <pre class="r"><code>model_15 &lt;- lm(
   data = train,
   formula = dispo_time_arraign ~ 
@@ -3575,26 +3597,26 @@ summary(model_15)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -455.39  -85.07  -30.60   47.29 1556.96 
+## -458.97  -85.03  -30.52   46.46 1556.03 
 ## 
 ## Coefficients:
 ##                        Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           136.52420    7.95094  17.171  &lt; 2e-16 ***
-## age                     0.26255    0.09022   2.910  0.00362 ** 
-## genderMale            -24.82699    2.83992  -8.742  &lt; 2e-16 ***
-## crime_histYes         -45.46924    6.66754  -6.819 9.37e-12 ***
-## is_felony              -7.00155    3.05879  -2.289  0.02209 *  
-## seriousness            12.49049    0.49062  25.459  &lt; 2e-16 ***
-## total_dfa              45.84094    1.01966  44.957  &lt; 2e-16 ***
-## is_trial_set          109.76783    2.21223  49.619  &lt; 2e-16 ***
-## is_competency_hearing  93.60713    4.58547  20.414  &lt; 2e-16 ***
-## is_drug_charge         31.32501    3.09918  10.108  &lt; 2e-16 ***
+## (Intercept)           145.06165    8.14254  17.815  &lt; 2e-16 ***
+## age                     0.26484    0.09077   2.918  0.00353 ** 
+## genderMale            -25.72815    2.85417  -9.014  &lt; 2e-16 ***
+## crime_histYes         -51.44878    6.85231  -7.508 6.22e-14 ***
+## is_felony              -9.44359    3.07699  -3.069  0.00215 ** 
+## seriousness            12.72500    0.49117  25.908  &lt; 2e-16 ***
+## total_dfa              46.30915    1.03490  44.747  &lt; 2e-16 ***
+## is_trial_set          108.68880    2.22655  48.815  &lt; 2e-16 ***
+## is_competency_hearing  92.79714    4.62122  20.081  &lt; 2e-16 ***
+## is_drug_charge         33.10983    3.10557  10.661  &lt; 2e-16 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 149 on 22494 degrees of freedom
-## Multiple R-squared:  0.2203, Adjusted R-squared:   0.22 
-## F-statistic: 706.1 on 9 and 22494 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 149.7 on 22420 degrees of freedom
+## Multiple R-squared:  0.217,  Adjusted R-squared:  0.2167 
+## F-statistic: 690.4 on 9 and 22420 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_15 &lt;- tidy(model_15)
 y_pred_15 &lt;- predict.lm(model_15, test)
 y_true_15 &lt;- test$dispo_time_arraign
@@ -3604,15 +3626,15 @@ mae_15 &lt;- round(MLmetrics::MAE(y_pred_15, y_true_15), 4)
 mape_15 &lt;- round(MLmetrics::MAPE(y_pred_15, y_true_15), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_15)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.2203&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.217&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_15)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 93.9606&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 93.5379&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_15)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: Inf&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 1.4203&quot;</code></pre>
 <pre class="r"><code>eval_arraign[15,] &lt;- c(15, r_sq_15, mae_15, mape_15)</code></pre>
 </div>
 <div id="model-16-1" class="section level3">
-<h3><span class="header-section-number">2.2.16</span> Model 16</h3>
+<h3><span class="header-section-number">2.3.16</span> Model 16</h3>
 <pre class="r"><code>model_16 &lt;- lm(
   data = train,
   formula = dispo_time_arraign ~ 
@@ -3627,32 +3649,31 @@ summary(model_16)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -440.17  -84.31  -30.63   46.23 1581.76 
+## -445.24  -84.07  -30.51   46.06 1581.34 
 ## 
 ## Coefficients:
 ##                       Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           170.9509    20.5487   8.319  &lt; 2e-16 ***
-## age_group20-30        -12.2712     6.1390  -1.999  0.04563 *  
-## age_group30-40        -16.5974     6.2611  -2.651  0.00803 ** 
-## age_group40-50         -3.8520     6.5042  -0.592  0.55370    
-## age_group50-60          0.4282     6.9722   0.061  0.95102    
-## age_groupGE_60          9.3691     9.3705   1.000  0.31739    
-## genderMale            -23.0054     2.8299  -8.129 4.54e-16 ***
-## crime_histYes         -44.1856     6.6572  -6.637 3.27e-11 ***
-## charge_classA         123.5950    19.0073   6.503 8.07e-11 ***
-## charge_classB          23.6947    18.5333   1.278  0.20109    
-## charge_classC          -3.8565    18.5258  -0.208  0.83510    
-## charge_classGM        -18.4014    18.5875  -0.990  0.32219    
-## total_dfa              44.4692     1.0091  44.070  &lt; 2e-16 ***
-## is_trial_set          112.0563     2.1884  51.205  &lt; 2e-16 ***
-## is_competency_hearing  95.8781     4.5710  20.975  &lt; 2e-16 ***
-## is_drug_charge         11.8350     2.8988   4.083 4.47e-05 ***
+## (Intercept)            164.169      9.524  17.237  &lt; 2e-16 ***
+## age_group20-30         -15.920      6.292  -2.530  0.01141 *  
+## age_group30-40         -20.154      6.411  -3.144  0.00167 ** 
+## age_group40-50          -7.728      6.652  -1.162  0.24535    
+## age_group50-60          -4.672      7.114  -0.657  0.51134    
+## age_groupGE_60          12.350      9.513   1.298  0.19423    
+## genderMale             -24.071      2.841  -8.471  &lt; 2e-16 ***
+## crime_histYes          -49.329      6.837  -7.215 5.57e-13 ***
+## charge_classA          145.205      5.149  28.201  &lt; 2e-16 ***
+## charge_classB           40.017      2.885  13.871  &lt; 2e-16 ***
+## charge_classC           11.898      2.837   4.194 2.75e-05 ***
+## total_dfa               45.075      1.024  44.020  &lt; 2e-16 ***
+## is_trial_set           110.933      2.201  50.405  &lt; 2e-16 ***
+## is_competency_hearing   96.019      4.602  20.866  &lt; 2e-16 ***
+## is_drug_charge          13.690      2.905   4.712 2.47e-06 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 148.7 on 22488 degrees of freedom
-## Multiple R-squared:  0.2242, Adjusted R-squared:  0.2237 
-## F-statistic: 433.3 on 15 and 22488 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 149.2 on 22415 degrees of freedom
+## Multiple R-squared:  0.2224, Adjusted R-squared:  0.2219 
+## F-statistic:   458 on 14 and 22415 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_16 &lt;- tidy(model_16)
 y_pred_16 &lt;- predict.lm(model_16, test)
 y_true_16 &lt;- test$dispo_time_arraign
@@ -3662,15 +3683,15 @@ mae_16 &lt;- round(MLmetrics::MAE(y_pred_16, y_true_16), 4)
 mape_16 &lt;- round(MLmetrics::MAPE(y_pred_16, y_true_16), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_16)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.2242&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.2224&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_16)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 93.0713&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 92.7861&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_16)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: Inf&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 1.3978&quot;</code></pre>
 <pre class="r"><code>eval_arraign[16,] &lt;- c(16, r_sq_16, mae_16, mape_16)</code></pre>
 </div>
 <div id="model-17-1" class="section level3">
-<h3><span class="header-section-number">2.2.17</span> Model 17</h3>
+<h3><span class="header-section-number">2.3.17</span> Model 17</h3>
 <pre class="r"><code>model_17 &lt;- lm(
   data = train,
   formula = dispo_time_arraign ~ 
@@ -3685,29 +3706,29 @@ summary(model_17)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -465.13  -85.22  -30.53   46.82 1562.30 
+## -474.15  -85.45  -30.53   46.49 1561.08 
 ## 
 ## Coefficients:
 ##                       Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           153.2996     9.1920  16.678  &lt; 2e-16 ***
-## age_group20-30        -14.9157     6.1376  -2.430   0.0151 *  
-## age_group30-40        -19.8694     6.2561  -3.176   0.0015 ** 
-## age_group40-50         -6.6475     6.5036  -1.022   0.3067    
-## age_group50-60         -2.3070     6.9739  -0.331   0.7408    
-## age_groupGE_60          7.7843     9.3828   0.830   0.4068    
-## genderMale            -24.6568     2.8374  -8.690  &lt; 2e-16 ***
-## crime_histYes         -44.0013     6.6702  -6.597  4.3e-11 ***
-## seriousness            11.7779     0.4148  28.393  &lt; 2e-16 ***
-## total_dfa              45.7958     1.0129  45.212  &lt; 2e-16 ***
-## is_trial_set          110.1895     2.2072  49.923  &lt; 2e-16 ***
-## is_competency_hearing  93.7313     4.5823  20.455  &lt; 2e-16 ***
-## is_drug_charge         28.8847     2.8839  10.016  &lt; 2e-16 ***
+## (Intercept)           164.1566     9.4108  17.443  &lt; 2e-16 ***
+## age_group20-30        -19.4426     6.2981  -3.087 0.002024 ** 
+## age_group30-40        -24.4025     6.4131  -3.805 0.000142 ***
+## age_group40-50        -11.4615     6.6596  -1.721 0.085254 .  
+## age_group50-60         -8.3136     7.1246  -1.167 0.243266    
+## age_groupGE_60          9.9075     9.5363   1.039 0.298851    
+## genderMale            -25.4112     2.8516  -8.911  &lt; 2e-16 ***
+## crime_histYes         -49.2355     6.8557  -7.182  7.1e-13 ***
+## seriousness            11.7840     0.4162  28.315  &lt; 2e-16 ***
+## total_dfa              46.2298     1.0284  44.954  &lt; 2e-16 ***
+## is_trial_set          109.3285     2.2219  49.206  &lt; 2e-16 ***
+## is_competency_hearing  92.9924     4.6180  20.137  &lt; 2e-16 ***
+## is_drug_charge         29.9923     2.8942  10.363  &lt; 2e-16 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 148.9 on 22491 degrees of freedom
-## Multiple R-squared:  0.2213, Adjusted R-squared:  0.2209 
-## F-statistic: 532.6 on 12 and 22491 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 149.6 on 22417 degrees of freedom
+## Multiple R-squared:  0.2181, Adjusted R-squared:  0.2177 
+## F-statistic:   521 on 12 and 22417 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_17 &lt;- tidy(model_17)
 y_pred_17 &lt;- predict.lm(model_17, test)
 y_true_17 &lt;- test$dispo_time_arraign
@@ -3717,15 +3738,15 @@ mae_17 &lt;- round(MLmetrics::MAE(y_pred_17, y_true_17), 4)
 mape_17 &lt;- round(MLmetrics::MAPE(y_pred_17, y_true_17), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_17)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.2213&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.2181&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_17)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 93.9664&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 93.4806&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_17)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: Inf&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 1.4147&quot;</code></pre>
 <pre class="r"><code>eval_arraign[17,] &lt;- c(17, r_sq_17, mae_17, mape_17)</code></pre>
 </div>
 <div id="model-18-1" class="section level3">
-<h3><span class="header-section-number">2.2.18</span> Model 18</h3>
+<h3><span class="header-section-number">2.3.18</span> Model 18</h3>
 <pre class="r"><code>model_18 &lt;- lm(
   data = train,
   formula = dispo_time_arraign ~ 
@@ -3740,31 +3761,31 @@ summary(model_18)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -451.62  -83.42  -30.23   46.37 1577.46 
+## -456.07  -83.54  -30.02   46.20 1575.91 
 ## 
 ## Coefficients:
 ##                       Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)            177.076      9.036  19.597  &lt; 2e-16 ***
-## age_group20-30         -14.200      6.130  -2.316  0.02054 *  
-## age_group30-40         -19.625      6.248  -3.141  0.00169 ** 
-## age_group40-50          -7.718      6.491  -1.189  0.23444    
-## age_group50-60          -3.135      6.963  -0.450  0.65256    
-## age_groupGE_60           3.927      9.355   0.420  0.67468    
-## genderMale             -23.231      2.831  -8.206 2.41e-16 ***
-## crime_histYes          -47.896      6.644  -7.209 5.81e-13 ***
-## serious_cat&gt;10         200.606      7.142  28.087  &lt; 2e-16 ***
-## serious_cat5-10         59.346      4.271  13.896  &lt; 2e-16 ***
-## serious_catOther        10.018      4.139   2.420  0.01551 *  
-## total_dfa               45.109      1.009  44.719  &lt; 2e-16 ***
-## is_trial_set           111.988      2.188  51.183  &lt; 2e-16 ***
-## is_competency_hearing   98.236      4.563  21.530  &lt; 2e-16 ***
-## is_drug_charge          15.420      2.820   5.468 4.59e-08 ***
+## (Intercept)            188.249      9.258  20.333  &lt; 2e-16 ***
+## age_group20-30         -19.520      6.285  -3.106 0.001902 ** 
+## age_group30-40         -24.591      6.402  -3.841 0.000123 ***
+## age_group40-50         -13.648      6.642  -2.055 0.039919 *  
+## age_group50-60          -9.855      7.109  -1.386 0.165655    
+## age_groupGE_60           4.897      9.507   0.515 0.606478    
+## genderMale             -24.007      2.845  -8.439  &lt; 2e-16 ***
+## crime_histYes          -52.699      6.830  -7.716 1.25e-14 ***
+## serious_cat&gt;10         203.205      7.140  28.460  &lt; 2e-16 ***
+## serious_cat5-10         56.887      4.298  13.237  &lt; 2e-16 ***
+## serious_catOther         9.941      4.129   2.408 0.016060 *  
+## total_dfa               45.568      1.024  44.502  &lt; 2e-16 ***
+## is_trial_set           111.200      2.202  50.496  &lt; 2e-16 ***
+## is_competency_hearing   97.550      4.597  21.219  &lt; 2e-16 ***
+## is_drug_charge          16.856      2.832   5.952 2.69e-09 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 148.6 on 22489 degrees of freedom
-## Multiple R-squared:  0.2254, Adjusted R-squared:  0.2249 
-## F-statistic: 467.5 on 14 and 22489 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 149.2 on 22415 degrees of freedom
+## Multiple R-squared:  0.2226, Adjusted R-squared:  0.2221 
+## F-statistic: 458.4 on 14 and 22415 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_18 &lt;- tidy(model_18)
 y_pred_18 &lt;- predict.lm(model_18, test)
 y_true_18 &lt;- test$dispo_time_arraign
@@ -3774,15 +3795,15 @@ mae_18 &lt;- round(MLmetrics::MAE(y_pred_18, y_true_18), 4)
 mape_18 &lt;- round(MLmetrics::MAPE(y_pred_18, y_true_18), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_18)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.2254&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.2226&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_18)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 93.2868&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 93.1663&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_18)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: Inf&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 1.4289&quot;</code></pre>
 <pre class="r"><code>eval_arraign[18,] &lt;- c(18, r_sq_18, mae_18, mape_18)</code></pre>
 </div>
 <div id="model-19-1" class="section level3">
-<h3><span class="header-section-number">2.2.19</span> Model 19</h3>
+<h3><span class="header-section-number">2.3.19</span> Model 19</h3>
 <pre class="r"><code>model_19 &lt;- lm(
   data = train,
   formula = dispo_time_arraign ~ 
@@ -3797,30 +3818,30 @@ summary(model_19)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -452.42  -84.67  -30.71   47.00 1566.05 
+## -457.21  -84.33  -30.16   46.57 1565.43 
 ## 
 ## Coefficients:
 ##                       Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           155.2667     9.1808  16.912  &lt; 2e-16 ***
-## age_group20-30        -11.7264     6.1400  -1.910  0.05616 .  
-## age_group30-40        -16.4952     6.2594  -2.635  0.00841 ** 
-## age_group40-50         -3.5320     6.5042  -0.543  0.58711    
-## age_group50-60          0.7284     6.9726   0.104  0.91680    
-## age_groupGE_60         10.1512     9.3727   1.083  0.27879    
-## genderMale            -24.4312     2.8332  -8.623  &lt; 2e-16 ***
-## crime_histYes         -43.9415     6.6599  -6.598 4.26e-11 ***
-## class_a                53.4118     6.3701   8.385  &lt; 2e-16 ***
-## seriousness             8.6324     0.5588  15.448  &lt; 2e-16 ***
-## total_dfa              45.8292     1.0114  45.314  &lt; 2e-16 ***
-## is_trial_set          109.8420     2.2042  49.833  &lt; 2e-16 ***
-## is_competency_hearing  94.1147     4.5755  20.569  &lt; 2e-16 ***
-## is_drug_charge         25.8908     2.9015   8.923  &lt; 2e-16 ***
+## (Intercept)           167.2282     9.3964  17.797  &lt; 2e-16 ***
+## age_group20-30        -16.1290     6.2941  -2.563  0.01040 *  
+## age_group30-40        -20.8171     6.4103  -3.247  0.00117 ** 
+## age_group40-50         -8.2559     6.6538  -1.241  0.21470    
+## age_group50-60         -5.1995     7.1169  -0.731  0.46504    
+## age_groupGE_60         11.9249     9.5186   1.253  0.21029    
+## genderMale            -25.3191     2.8457  -8.897  &lt; 2e-16 ***
+## crime_histYes         -49.4608     6.8415  -7.230    5e-13 ***
+## class_a                62.3564     6.4001   9.743  &lt; 2e-16 ***
+## seriousness             8.1123     0.5608  14.466  &lt; 2e-16 ***
+## total_dfa              46.3008     1.0262  45.117  &lt; 2e-16 ***
+## is_trial_set          108.9427     2.2176  49.127  &lt; 2e-16 ***
+## is_competency_hearing  93.8122     4.6091  20.354  &lt; 2e-16 ***
+## is_drug_charge         26.5582     2.9096   9.128  &lt; 2e-16 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 148.7 on 22490 degrees of freedom
-## Multiple R-squared:  0.2237, Adjusted R-squared:  0.2233 
-## F-statistic: 498.6 on 13 and 22490 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 149.3 on 22416 degrees of freedom
+## Multiple R-squared:  0.2214, Adjusted R-squared:  0.2209 
+## F-statistic: 490.3 on 13 and 22416 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_19 &lt;- tidy(model_19)
 y_pred_19 &lt;- predict.lm(model_19, test)
 y_true_19 &lt;- test$dispo_time_arraign
@@ -3830,15 +3851,15 @@ mae_19 &lt;- round(MLmetrics::MAE(y_pred_19, y_true_19), 4)
 mape_19 &lt;- round(MLmetrics::MAPE(y_pred_19, y_true_19), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_19)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.2237&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.2214&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_19)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 93.4908&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 93.2811&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_19)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: Inf&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 1.4116&quot;</code></pre>
 <pre class="r"><code>eval_arraign[19,] &lt;- c(19, r_sq_19, mae_19, mape_19)</code></pre>
 </div>
 <div id="model-20-1" class="section level3">
-<h3><span class="header-section-number">2.2.20</span> Model 20</h3>
+<h3><span class="header-section-number">2.3.20</span> Model 20</h3>
 <pre class="r"><code>model_20 &lt;- lm(
   data = train,
   formula = dispo_time_arraign ~ 
@@ -3853,30 +3874,30 @@ summary(model_20)</code></pre>
 ## 
 ## Residuals:
 ##     Min      1Q  Median      3Q     Max 
-## -468.81  -85.00  -30.54   46.94 1563.08 
+## -479.00  -84.82  -30.56   46.37 1562.10 
 ## 
 ## Coefficients:
 ##                       Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)           156.3493     9.3118  16.791  &lt; 2e-16 ***
-## age_group20-30        -14.3422     6.1436  -2.334  0.01958 *  
-## age_group30-40        -19.1954     6.2644  -3.064  0.00218 ** 
-## age_group40-50         -6.0355     6.5100  -0.927  0.35388    
-## age_group50-60         -1.7433     6.9789  -0.250  0.80274    
-## age_groupGE_60          8.2214     9.3846   0.876  0.38101    
-## genderMale            -24.8580     2.8389  -8.756  &lt; 2e-16 ***
-## crime_histYes         -44.1490     6.6701  -6.619  3.7e-11 ***
-## is_felony              -6.2535     3.0610  -2.043  0.04107 *  
-## seriousness            12.3207     0.4926  25.013  &lt; 2e-16 ***
-## total_dfa              46.0328     1.0195  45.154  &lt; 2e-16 ***
-## is_trial_set          109.9339     2.2106  49.731  &lt; 2e-16 ***
-## is_competency_hearing  93.8484     4.5823  20.480  &lt; 2e-16 ***
-## is_drug_charge         31.1909     3.0968  10.072  &lt; 2e-16 ***
+## (Intercept)           168.5231     9.5409  17.663  &lt; 2e-16 ***
+## age_group20-30        -18.7435     6.3022  -2.974 0.002941 ** 
+## age_group30-40        -23.5377     6.4198  -3.666 0.000247 ***
+## age_group40-50        -10.7534     6.6635  -1.614 0.106592    
+## age_group50-60         -7.6584     7.1275  -1.074 0.282614    
+## age_groupGE_60         10.3475     9.5362   1.085 0.277898    
+## genderMale            -25.6726     2.8528  -8.999  &lt; 2e-16 ***
+## crime_histYes         -49.5413     6.8556  -7.226 5.12e-13 ***
+## is_felony              -8.5176     3.0789  -2.766 0.005671 ** 
+## seriousness            12.5146     0.4928  25.393  &lt; 2e-16 ***
+## total_dfa              46.5495     1.0347  44.989  &lt; 2e-16 ***
+## is_trial_set          108.9661     2.2254  48.965  &lt; 2e-16 ***
+## is_competency_hearing  93.1772     4.6178  20.178  &lt; 2e-16 ***
+## is_drug_charge         33.0906     3.1030  10.664  &lt; 2e-16 ***
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
 ## 
-## Residual standard error: 148.9 on 22490 degrees of freedom
-## Multiple R-squared:  0.2214, Adjusted R-squared:  0.221 
-## F-statistic:   492 on 13 and 22490 DF,  p-value: &lt; 2.2e-16</code></pre>
+## Residual standard error: 149.6 on 22416 degrees of freedom
+## Multiple R-squared:  0.2184, Adjusted R-squared:  0.2179 
+## F-statistic: 481.7 on 13 and 22416 DF,  p-value: &lt; 2.2e-16</code></pre>
 <pre class="r"><code>result_20 &lt;- tidy(model_20)
 y_pred_20 &lt;- predict.lm(model_20, test)
 y_true_20 &lt;- test$dispo_time_arraign
@@ -3886,38 +3907,37 @@ mae_20 &lt;- round(MLmetrics::MAE(y_pred_20, y_true_20), 4)
 mape_20 &lt;- round(MLmetrics::MAPE(y_pred_20, y_true_20), 4)
 
 paste(&quot;R-Squared:&quot;, r_sq_20)</code></pre>
-<pre><code>## [1] &quot;R-Squared: 0.2214&quot;</code></pre>
+<pre><code>## [1] &quot;R-Squared: 0.2184&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAE - Mean Absolute Error:&quot;, mae_20)</code></pre>
-<pre><code>## [1] &quot;MAE - Mean Absolute Error: 93.8934&quot;</code></pre>
+<pre><code>## [1] &quot;MAE - Mean Absolute Error: 93.4959&quot;</code></pre>
 <pre class="r"><code>paste(&quot;MAPE - Mean Absolute Percentage Error:&quot;, mape_20)</code></pre>
-<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: Inf&quot;</code></pre>
+<pre><code>## [1] &quot;MAPE - Mean Absolute Percentage Error: 1.4143&quot;</code></pre>
 <pre class="r"><code>eval_arraign[20,] &lt;- c(20, r_sq_20, mae_20, mape_20)</code></pre>
 </div>
 <div id="conclusions-1" class="section level3">
-<h3><span class="header-section-number">2.2.21</span> Conclusions</h3>
+<h3><span class="header-section-number">2.3.21</span> Conclusions</h3>
 <pre class="r"><code>eval_arraign</code></pre>
-<pre><code>##    model_nbr r_squared     mae mape
-## 1          1    0.3140 89.4155  Inf
-## 2          2    0.3118 90.4312  Inf
-## 3          3    0.3192 89.5843  Inf
-## 4          4    0.3154 89.8483  Inf
-## 5          5    0.3120 90.4034  Inf
-## 6          6    0.3149 89.3140  Inf
-## 7          7    0.3129 90.3564  Inf
-## 8          8    0.3201 89.4756  Inf
-## 9          9    0.3163 89.7711  Inf
-## 10        10    0.3130 90.3342  Inf
-## 11        11    0.2232 93.1252  Inf
-## 12        12    0.2201 94.0453  Inf
-## 13        13    0.2244 93.3932  Inf
-## 14        14    0.2227 93.5585  Inf
-## 15        15    0.2203 93.9606  Inf
-## 16        16    0.2242 93.0713  Inf
-## 17        17    0.2213 93.9664  Inf
-## 18        18    0.2254 93.2868  Inf
-## 19        19    0.2237 93.4908  Inf
-## 20        20    0.2214 93.8934  Inf</code></pre>
-<p>RRR</p>
+<pre><code>##    model_nbr r_squared     mae   mape
+## 1          1    0.3157 89.1736 1.3706
+## 2          2    0.3111 89.8796 1.3867
+## 3          3    0.3204 89.3151 1.3938
+## 4          4    0.3159 89.6414 1.3822
+## 5          5    0.3114 89.9387 1.3866
+## 6          6    0.3159 89.2060 1.3690
+## 7          7    0.3124 89.8354 1.3817
+## 8          8    0.3204 89.3782 1.3923
+## 9          9    0.3169 89.5983 1.3777
+## 10        10    0.3126 89.8879 1.3818
+## 11        11    0.2213 92.7709 1.4028
+## 12        12    0.2167 93.5156 1.4208
+## 13        13    0.2214 93.2021 1.4349
+## 14        14    0.2202 93.2949 1.4171
+## 15        15    0.2170 93.5379 1.4203
+## 16        16    0.2224 92.7861 1.3978
+## 17        17    0.2181 93.4806 1.4147
+## 18        18    0.2226 93.1663 1.4289
+## 19        19    0.2214 93.2811 1.4116
+## 20        20    0.2184 93.4959 1.4143</code></pre>
 </div>
 </div>
 </div>

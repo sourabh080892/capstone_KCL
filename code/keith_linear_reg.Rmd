@@ -58,7 +58,10 @@ base_data <- dispo_by_category %>%
   replace_na(list(class.x = "Other", serious_cat = "Other", defendant_status = "Other", seriousness = 0, no_of_trial_sets = 0)) %>% 
   mutate(
     is_rep_charge = if_else(charge_code.x == charge_code | is.na(charge_code.x), 1, 0),
+    class.x = if_else(class.x %in% c("A", "B", "C"), class.x, "GM"),
     class_a = if_else(class.x == "A", 1, 0),
+    age_below_18 = if_else(age <= 18, 1, 0),
+    age_below_60 = if_else(age >= 60, 1, 0),
     is_felony = if_else(class.x %in% c("A", "B", "C"), 1, 0),
     is_drug_charge = if_else(no_of_drug_charges > 0, 1, 0),
     is_drug_court = if_else(no_of_drug_court > 0, 1, 0),
@@ -70,13 +73,13 @@ base_data <- dispo_by_category %>%
     gender != "Unknown",
     class.x %in% c("M", "A", "B", "C", "GM"),
     defendant_status %in% c("IN", "OUT", "Other"),
-    between(dispo_time_filing, 0, 5 * 365),
-    between(dispo_time_arraign, 0, 5 * 365)
+    between(dispo_time_filing, 1, 5 * 365),
+    between(dispo_time_arraign, 1, 5 * 365)
   ) %>% 
   mutate_at(c("age_group", "gender", "crime_hist", "class.x", "serious_cat", "defendant_status"), factor) %>% 
-  select(
+  dplyr::select(
     file_number, defendant_id,
-    dispo_time_filing, dispo_time_arraign, gender, age, age_group,
+    dispo_time_filing, dispo_time_arraign, gender, age, age_group, age_below_18, age_below_60,
     class.x, class_a, is_felony, seriousness, serious_cat, crime_hist, total_dfa,
     no_of_drug_charges, no_of_drug_court, no_of_trial_sets,
     is_drug_charge, is_drug_court, is_trial_set, is_competency_hearing,
@@ -87,7 +90,7 @@ base_data <- dispo_by_category %>%
 base_data$age_group <- relevel(base_data$age_group, "LE_18")
 base_data$gender <- relevel(base_data$gender, "Female")
 base_data$crime_hist <- relevel(base_data$crime_hist, "No")
-base_data$charge_class <- relevel(base_data$charge_class, "M")
+base_data$charge_class <- relevel(base_data$charge_class, "GM")
 base_data$defendant_status <- relevel(base_data$defendant_status, "IN")
 
 ```
@@ -162,6 +165,16 @@ There may be possible interactions between the following pairs of variables:
 
 ```
 
+## Summary - Models Chosen
+
+Based on our interpretation of the model output, we have concluded that Models 1 and 2 best explain the relationships different variables have with disposition time.
+
++ Those models show the highest R-squared at approx 0.30, the (approx) lowest MAE at 96 and (approx) lowest MAPE at 0.78
++ Charge class accounts for some of the variation in disposition time due to cases involving a drug charge. 
+    + Hence the drug charge variable is shown to not be significant in _Model 1_
++ However, cases that include a drug charge include varying seriousness levels due to other charges being involved in the same case. 
+    + Hence, the variable indicating the case has a drug charge is significant in _Model 2_, unlike in _Model 1_
+
 ## Model Selection - based on filing date
 
 Initialize data frame to record key metrics
@@ -177,7 +190,7 @@ eval_filing <- data.frame(model_nbr = numeric(), r_squared = numeric(), mae = nu
 model_1 <- lm(
   data = train,
   formula = dispo_time_filing ~ 
-    age + gender + crime_hist + charge_class + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+    age + age_below_18 + age_below_60 + gender + crime_hist + charge_class + total_dfa + is_trial_set + is_competency_hearing + is_drug_court + is_drug_charge
 )
 summary(model_1)
 result_1 <- tidy(model_1)
@@ -203,7 +216,7 @@ eval_filing[1,] <- c(1, r_sq_1, mae_1, mape_1)
 model_2 <- lm(
   data = train,
   formula = dispo_time_filing ~ 
-    age + gender + crime_hist + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+    age + gender + crime_hist + seriousness + total_dfa + is_trial_set + is_competency_hearing + is_drug_court + is_drug_charge
 )
 summary(model_2)
 result_2 <- tidy(model_2)
@@ -229,7 +242,7 @@ eval_filing[2,] <- c(2, r_sq_2, mae_2, mape_2)
 model_3 <- lm(
   data = train,
   formula = dispo_time_filing ~ 
-    age + gender + crime_hist + serious_cat + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+    age + age_below_18 + age_below_60 + gender + crime_hist + serious_cat + total_dfa + is_trial_set + is_competency_hearing + is_drug_court + is_drug_charge
 )
 summary(model_3)
 result_3 <- tidy(model_3)
@@ -696,10 +709,6 @@ eval_filing[20,] <- c(20, r_sq_20, mae_20, mape_20)
 eval_filing
 ```
 
-RRR
-
-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXx
-
 ## Model Selection - based on arraignment date
 
 Initialize data frame to record key metrics
@@ -715,7 +724,7 @@ eval_arraign <- data.frame(model_nbr = numeric(), r_squared = numeric(), mae = n
 model_1 <- lm(
   data = train,
   formula = dispo_time_arraign ~ 
-    age + gender + crime_hist + charge_class + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+    age + age_below_18 + age_below_60 + gender + crime_hist + charge_class + total_dfa + is_trial_set + is_competency_hearing + is_drug_court + is_drug_charge
 )
 summary(model_1)
 result_1 <- tidy(model_1)
@@ -767,7 +776,7 @@ eval_arraign[2,] <- c(2, r_sq_2, mae_2, mape_2)
 model_3 <- lm(
   data = train,
   formula = dispo_time_arraign ~ 
-    age + gender + crime_hist + serious_cat + total_dfa + is_trial_set + is_competency_hearing + is_drug_court
+    age + age_below_18 + age_below_60 + gender + crime_hist + serious_cat + total_dfa + is_trial_set + is_competency_hearing + is_drug_court + is_drug_charge
 )
 summary(model_3)
 result_3 <- tidy(model_3)
@@ -1234,5 +1243,4 @@ eval_arraign[20,] <- c(20, r_sq_20, mae_20, mape_20)
 eval_arraign
 ```
 
-RRR
 
